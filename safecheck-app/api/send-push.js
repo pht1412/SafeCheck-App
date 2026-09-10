@@ -7,21 +7,30 @@
 import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://bozuzbmgnzzxyrioxzaa.supabase.co';
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_ZQjFvvLTLywvw4rKJIPU9Q_5iR_78Rr';
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
 
-const rawPublicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || 'BBub7j1uGoSi39dIjFnM43eQZRcIL_j8iRNt035Uy0zbAC5whyylXiKKdmzECaH8YMHpIdqLpvhUmgx94zNXlYk';
-const rawPrivateKey = process.env.VAPID_PRIVATE_KEY || 'EbZfOAThsGUEkwY56PUI5ChUKOOBcmKSEgcpV25kVx8';
+const rawPublicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || '';
+const rawPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
 const rawSubject = process.env.VAPID_SUBJECT || 'mailto:contact@safecheck.app';
 
 const VAPID_PUBLIC_KEY = rawPublicKey.trim().replace(/^["']|["']$/g, '');
 const VAPID_PRIVATE_KEY = rawPrivateKey.trim().replace(/^["']|["']$/g, '');
 const VAPID_SUBJECT = rawSubject.trim().replace(/^["']|["']$/g, '');
 
-webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
+  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+}
 
 export default async function handler(req, res) {
+  // Kiểm tra cấu hình môi trường bắt buộc
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return res.status(500).json({ error: 'Server misconfiguration: Missing Supabase environment variables' });
+  }
+  if (!VAPID_PUBLIC_KEY || !VAPID_PRIVATE_KEY) {
+    return res.status(500).json({ error: 'Server misconfiguration: Missing VAPID keys in environment variables' });
+  }
   // Chỉ chấp nhận method POST
   if (req.method !== 'POST') {
     res.setHeader('Allow', ['POST']);
