@@ -11,9 +11,13 @@ const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL |
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_ZQjFvvLTLywvw4rKJIPU9Q_5iR_78Rr';
 
-const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || 'BBub7j1uGoSi39dIjFnM43eQZRcIL_j8iRNt035Uy0zbAC5whyylXiKKdmzECaH8YMHpIdqLpvhUmgx94zNXlYk';
-const VAPID_PRIVATE_KEY = process.env.VAPID_PRIVATE_KEY || 'EbZfOAThsGUEkwY56PUI5ChUKOOBcmKSEgcpV25kVx8';
-const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:contact@safecheck.app';
+const rawPublicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || 'BBub7j1uGoSi39dIjFnM43eQZRcIL_j8iRNt035Uy0zbAC5whyylXiKKdmzECaH8YMHpIdqLpvhUmgx94zNXlYk';
+const rawPrivateKey = process.env.VAPID_PRIVATE_KEY || 'EbZfOAThsGUEkwY56PUI5ChUKOOBcmKSEgcpV25kVx8';
+const rawSubject = process.env.VAPID_SUBJECT || 'mailto:contact@safecheck.app';
+
+const VAPID_PUBLIC_KEY = rawPublicKey.trim().replace(/^["']|["']$/g, '');
+const VAPID_PRIVATE_KEY = rawPrivateKey.trim().replace(/^["']|["']$/g, '');
+const VAPID_SUBJECT = rawSubject.trim().replace(/^["']|["']$/g, '');
 
 webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
@@ -152,6 +156,7 @@ export default async function handler(req, res) {
       dispatched_count: successCount,
       total_subscriptions: subscriptions.length,
       expired_removed: expiredEndpoints.length,
+      dispatch_results: results,
     });
   } catch (err) {
     console.error('[Dispatcher] Lỗi không mong đợi:', err);

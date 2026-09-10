@@ -32,11 +32,9 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || 'Người thân vừa kích hoạt báo động cứu hộ! Nhấn để kiểm tra ngay.',
     icon: '/apple-touch-icon.png',
-    badge: '/favicon.svg',
-    // Dynamic tag theo sos_event_id: gộp các thông báo cùng một sự kiện, không ghi đè sự kiện khác
+    badge: '/icon-192.png',
     tag: `safecheck-sos-${sosEventId || 'general'}`,
     renotify: true,
-    requireInteraction: true, // Giữ thông báo trên màn hình cho đến khi người dùng tương tác
     vibrate: [500, 200, 500, 200, 500, 200, 1000],
     data: {
       sos_event_id: sosEventId,
@@ -45,7 +43,15 @@ self.addEventListener('push', (event) => {
     },
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    self.registration.showNotification(title, options).catch((err) => {
+      console.warn('[SW] showNotification lỗi, dùng fallback tối giản:', err);
+      return self.registration.showNotification(title, {
+        body: options.body,
+        icon: '/apple-touch-icon.png',
+      });
+    })
+  );
 });
 
 // 2. LẮNG NGHE THAO TÁC CHẠM VÀO THÔNG BÁO (NOTIFICATION CLICK)
