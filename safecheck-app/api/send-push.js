@@ -8,9 +8,7 @@ import webpush from 'web-push';
 import { createClient } from '@supabase/supabase-js';
 
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://bozuzbmgnzzxyrioxzaa.supabase.co';
-// Khóa Service Role có quyền bypass RLS để truy vấn subscriptions và cập nhật push_dispatched_at
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-// Khóa Anon dùng để xác thực Bearer token của caller
 const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_ZQjFvvLTLywvw4rKJIPU9Q_5iR_78Rr';
 
 const VAPID_PUBLIC_KEY = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || 'BBub7j1uGoSi39dIjFnM43eQZRcIL_j8iRNt035Uy0zbAC5whyylXiKKdmzECaH8YMHpIdqLpvhUmgx94zNXlYk';
@@ -45,9 +43,9 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
   }
 
-  // Khởi tạo admin client (Service Role) để thực hiện các thao tác hạ tầng
-  const adminKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
-  const adminClient = createClient(SUPABASE_URL, adminKey);
+  // Khởi tạo client gọi RPC (Sử dụng Service Role nếu có, hoặc Anon Key kết hợp RPC SECURITY DEFINER)
+  const clientKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
+  const dbClient = createClient(SUPABASE_URL, clientKey);
 
   const { sos_event_id } = req.body || {};
   if (!sos_event_id) {
@@ -55,55 +53,25 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 2. AUTHORIZE SOS OWNER
-    const { data: sosEvent, error: eventError } = await adminClient
-      .from('sos_events')
-      .select('*')
-      .eq('id', sos_event_id)
-      .maybeSingle();
+    // 2 & 3. ATOMIC CLAIM & AUTHORIZE CALLER (via SECURITY DEFINER RPC)
+    const { data: claimResult, error: claimRpcError } = await dbClient.rpc('claim_sos_push_dispatch', {
+      p_sos_event_id: sos_event_id,
+      p_caller_id: user.id,
+    });
 
-    if (eventError || !sosEvent) {
-      return res.status(404).json({ error: 'SOS event not found' });
+    if (claimRpcError) {
+      console.error('[Dispatcher] Lỗi gọi claim_sos_push_dispatch:', claimRpcError);
+      return res.status(500).json({ error: 'Failed to claim dispatch: ' + claimRpcError.message });
     }
 
-    // Caller bắt buộc phải là Cụ bà sở hữu sự kiện HOẶC Con cháu đã liên kết (phục vụ test và báo động chéo)
-    const isOwner = user.id === sosEvent.elderly_id;
-    let isAuthorized = isOwner;
-    if (!isOwner) {
-      const { data: linkCheck } = await adminClient
-        .from('family_links')
-        .select('id')
-        .eq('elderly_id', sosEvent.elderly_id)
-        .eq('caregiver_id', user.id)
-        .eq('status', 'accepted')
-        .maybeSingle();
-      if (linkCheck) isAuthorized = true;
+    if (!claimResult || !claimResult.success) {
+      const isForbidden = claimResult?.error?.includes('Forbidden');
+      const statusCode = isForbidden ? 403 : 404;
+      return res.status(statusCode).json({ error: claimResult?.error || 'SOS event not found or unauthorized' });
     }
 
-    if (!isAuthorized) {
-      return res.status(403).json({ error: 'Forbidden: Caller is not authorized for this SOS event' });
-    }
-
-    // 3. ATOMIC IDEMPOTENCY CLAIM
-    // Sử dụng UPDATE có điều kiện push_dispatched_at IS NULL để khóa sự kiện nguyên tử
-    const { data: claimedEvent, error: claimError } = await adminClient
-      .from('sos_events')
-      .update({
-        push_dispatched_at: new Date().toISOString(),
-        push_dispatched_count: (sosEvent.push_dispatched_count || 0) + 1,
-      })
-      .eq('id', sos_event_id)
-      .is('push_dispatched_at', null)
-      .select('*')
-      .maybeSingle();
-
-    if (claimError) {
-      console.error('[Dispatcher] Lỗi cập nhật idempotency:', claimError);
-      return res.status(500).json({ error: 'Failed to claim dispatch idempotency: ' + claimError.message });
-    }
-
-    // Nếu không cập nhật được dòng nào -> Sự kiện này đã được dispatch trước đó!
-    if (!claimedEvent) {
+    // Nếu sự kiện đã từng được dispatch trước đó -> Bỏ qua tránh gửi trùng lặp
+    if (!claimResult.claimed) {
       return res.status(200).json({
         success: true,
         status: 'already_dispatched',
@@ -112,31 +80,17 @@ export default async function handler(req, res) {
       });
     }
 
-    // 4 & 5. RESOLVE CAREGIVERS & SUBSCRIPTIONS
-    // Ưu tiên 1: Gọi RPC get_caregiver_push_subscriptions (bypasses RLS an toàn bằng SECURITY DEFINER)
-    let subscriptions = [];
-    const { data: rpcSubs, error: rpcError } = await adminClient.rpc('get_caregiver_push_subscriptions', {
-      p_elderly_id: sosEvent.elderly_id,
+    const elderlyId = claimResult.elderly_id;
+    const elderlyName = claimResult.elderly_name || 'Người thân';
+
+    // 4 & 5. RESOLVE CAREGIVERS & SUBSCRIPTIONS (via SECURITY DEFINER RPC)
+    const { data: subscriptions, error: rpcError } = await dbClient.rpc('get_caregiver_push_subscriptions', {
+      p_elderly_id: elderlyId,
     });
 
-    if (!rpcError && Array.isArray(rpcSubs) && rpcSubs.length > 0) {
-      subscriptions = rpcSubs;
-    } else {
-      // Ưu tiên 2 (Fallback): Truy vấn trực tiếp qua bảng nếu có service_role
-      const { data: links } = await adminClient
-        .from('family_links')
-        .select('caregiver_id')
-        .eq('elderly_id', sosEvent.elderly_id)
-        .eq('status', 'accepted');
-
-      if (links && links.length > 0) {
-        const caregiverIds = links.map((l) => l.caregiver_id);
-        const { data: directSubs } = await adminClient
-          .from('push_subscriptions')
-          .select('*')
-          .in('user_id', caregiverIds);
-        if (directSubs) subscriptions = directSubs;
-      }
+    if (rpcError) {
+      console.error('[Dispatcher] Lỗi lấy danh sách subscriptions:', rpcError);
+      return res.status(500).json({ error: 'Failed to resolve subscriptions: ' + rpcError.message });
     }
 
     if (!subscriptions || subscriptions.length === 0) {
@@ -146,15 +100,6 @@ export default async function handler(req, res) {
         dispatched_count: 0,
       });
     }
-
-    // Lấy tên thân thiện của Cụ bà
-    const { data: profile } = await adminClient
-      .from('profiles')
-      .select('full_name')
-      .eq('id', sosEvent.elderly_id)
-      .maybeSingle();
-
-    const elderlyName = profile?.full_name || 'Người thân';
 
     // 6. DISPATCH VIA WEB-PUSH (Apple APNs / Google FCM)
     const payload = JSON.stringify({
@@ -195,7 +140,9 @@ export default async function handler(req, res) {
 
     // Xóa các subscription rác khỏi database nếu có
     if (expiredEndpoints.length > 0) {
-      await adminClient.from('push_subscriptions').delete().in('endpoint', expiredEndpoints);
+      await dbClient.rpc('remove_expired_push_subscriptions', {
+        p_endpoints: expiredEndpoints,
+      }).catch((e) => console.warn('[Dispatcher] Lỗi xóa endpoint rác:', e));
     }
 
     // 8. PHẢN HỒI KẾT QUẢ

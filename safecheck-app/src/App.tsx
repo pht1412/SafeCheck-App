@@ -322,21 +322,33 @@ export default function App() {
 
       // 1. Tạo sự kiện vào bảng sos_events (Source of Truth) & Kích hoạt Web Push ngoại tuyến
       if (userProfile?.id && userProfile.role === 'elderly') {
+        const elderlyId = userProfile.id;
         supabase
-          .from('sos_events')
-          .insert({
-            elderly_id: userProfile.id,
-            status: 'active',
-            trigger_source: 'button',
-          })
-          .select()
-          .single()
-          .then(({ data: newEvent, error: insertErr }) => {
-            if (newEvent && !insertErr) {
-              console.log('[SafeCheck] Đã tạo sự kiện sos_events:', newEvent.id);
-              pushNotificationService.sendEmergencyPush(newEvent.id);
-            } else if (insertErr) {
-              console.error('[SafeCheck] Lỗi tạo sos_events:', insertErr);
+          .rpc('create_sos_event', { p_elderly_id: elderlyId })
+          .then(({ data: rpcRes, error: rpcErr }) => {
+            const sosId = rpcRes?.sos_event_id;
+            if (sosId) {
+              console.log('[SafeCheck] Đã tạo sự kiện sos_events qua RPC:', sosId);
+              pushNotificationService.sendEmergencyPush(sosId);
+            } else {
+              if (rpcErr) console.warn('[SafeCheck] RPC create_sos_event lỗi, thử insert trực tiếp:', rpcErr);
+              supabase
+                .from('sos_events')
+                .insert({
+                  elderly_id: elderlyId,
+                  status: 'active',
+                  trigger_source: 'button',
+                })
+                .select()
+                .single()
+                .then(({ data: newEvent, error: insertErr }) => {
+                  if (newEvent && !insertErr) {
+                    console.log('[SafeCheck] Đã tạo sự kiện sos_events:', newEvent.id);
+                    pushNotificationService.sendEmergencyPush(newEvent.id);
+                  } else if (insertErr) {
+                    console.error('[SafeCheck] Lỗi tạo sos_events:', insertErr);
+                  }
+                });
             }
           });
       }
@@ -351,7 +363,7 @@ export default function App() {
     return () => {
       if (sosCountdownIntervalRef.current) clearTimeout(sosCountdownIntervalRef.current);
     };
-  }, [sosCountdown, activeFamilyCode]);
+  }, [sosCountdown, activeFamilyCode, userProfile]);
 
   // Flow 1 & Flow 4: Điểm danh
   const handleCheckIn = async () => {
@@ -469,19 +481,32 @@ export default function App() {
     if (status === 'Emergency') {
       const targetElderlyId = userProfile?.role === 'elderly' ? userProfile.id : linkedElderly?.id;
       if (targetElderlyId) {
-        const { data: newEvent } = await supabase
-          .from('sos_events')
-          .insert({
-            elderly_id: targetElderlyId,
-            status: 'active',
-            trigger_source: 'button',
-          })
-          .select()
-          .single();
+        // Ưu tiên gọi RPC create_sos_event (SECURITY DEFINER)
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('create_sos_event', {
+          p_elderly_id: targetElderlyId,
+        });
 
-        if (newEvent) {
-          console.log('[SafeCheck DevTool] Phát lệnh Web Push từ Dev Tool cho sự kiện:', newEvent.id);
-          pushNotificationService.sendEmergencyPush(newEvent.id);
+        let sosEventId = rpcRes?.sos_event_id;
+
+        if (!sosEventId) {
+          if (rpcErr) console.warn('[SafeCheck DevTool] RPC create_sos_event không thành công, thử insert trực tiếp:', rpcErr);
+          const { data: newEvent, error: insertErr } = await supabase
+            .from('sos_events')
+            .insert({
+              elderly_id: targetElderlyId,
+              status: 'active',
+              trigger_source: 'button',
+            })
+            .select()
+            .maybeSingle();
+
+          if (insertErr) console.error('[SafeCheck DevTool] Lỗi insert sos_events:', insertErr);
+          sosEventId = newEvent?.id;
+        }
+
+        if (sosEventId) {
+          console.log('[SafeCheck DevTool] Phát lệnh Web Push từ Dev Tool cho sự kiện:', sosEventId);
+          await pushNotificationService.sendEmergencyPush(sosEventId);
         }
       }
     } else if (status === 'Safe') {
