@@ -1,28 +1,30 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#059669"/>
-      <stop offset="50%" stop-color="#10b981"/>
-      <stop offset="100%" stop-color="#14b8a6"/>
+      <stop offset="0%" stop-color="#064e3b"/>
+      <stop offset="45%" stop-color="#059669"/>
+      <stop offset="100%" stop-color="#0d9488"/>
     </linearGradient>
     <linearGradient id="shieldGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.25"/>
-      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.05"/>
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.08"/>
     </linearGradient>
     <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#059669" flood-opacity="0.5"/>
+      <feDropShadow dx="0" dy="10" stdDeviation="16" flood-color="#000000" flood-opacity="0.4"/>
     </filter>
   </defs>
 
-  <!-- Background rounded app icon frame -->
-  <rect width="512" height="512" rx="128" fill="#020617"/>
-  <rect x="24" y="24" width="464" height="464" rx="108" fill="url(#bgGrad)" filter="url(#glow)"/>
+  <!-- Full-bleed background so iOS rounds corners cleanly without black borders -->
+  <rect width="512" height="512" fill="url(#bgGrad)"/>
+
+  <!-- Subtle glow aura behind shield -->
+  <circle cx="256" cy="245" r="160" fill="#34d399" opacity="0.2"/>
 
   <!-- Inner shield shape -->
-  <path d="M256 96 C336 96 384 128 384 128 C384 272 296 368 256 400 C216 368 128 272 128 128 C128 128 176 96 256 96 Z"
-        fill="url(#shieldGrad)" stroke="#ffffff" stroke-width="12" stroke-linejoin="round"/>
+  <path d="M256 100 C336 100 380 132 380 132 C380 270 296 362 256 392 C216 362 132 270 132 132 C132 132 176 100 256 100 Z"
+        fill="url(#shieldGrad)" stroke="#ffffff" stroke-width="16" stroke-linejoin="round" filter="url(#glow)"/>
 
-  <!-- Glowing checkmark -->
-  <path d="M200 248 L238 286 L316 196"
-        fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Crisp checkmark -->
+  <path d="M204 246 L242 284 L314 196"
+        fill="none" stroke="#ffffff" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" filter="url(#glow)"/>
 </svg>
