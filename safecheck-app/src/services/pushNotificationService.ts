@@ -233,4 +233,29 @@ export const pushNotificationService = {
       return { success: false, message: 'Không thể kết nối đến máy chủ gửi push: ' + errorMsg };
     }
   },
+
+  /**
+   * Phát 1 thông báo thử nghiệm trực tiếp trên thiết bị để kiểm tra chuông & rung
+   */
+  async testLocalNotification(): Promise<{ success: boolean; message: string }> {
+    if (!this.isPushSupported()) {
+      return { success: false, message: 'Trình duyệt không hỗ trợ.' };
+    }
+    try {
+      const registration = await navigator.serviceWorker.ready;
+      await registration.showNotification('🚨 SafeCheck - THÔNG BÁO THỬ NGHIỆM', {
+        body: 'Âm thanh và rung của SafeCheck trên thiết bị này hoạt động hoàn hảo!',
+        icon: '/apple-touch-icon.png',
+        badge: '/favicon.svg',
+        vibrate: [500, 200, 500, 200, 500],
+        tag: 'safecheck-test-alert',
+        renotify: true,
+        data: { url: '/' },
+      } as any);
+      return { success: true, message: 'Đã gửi thông báo thử nghiệm tới thiết bị!' };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      return { success: false, message: 'Lỗi phát thông báo: ' + errorMsg };
+    }
+  },
 };

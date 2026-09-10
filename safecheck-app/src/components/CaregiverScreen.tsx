@@ -300,9 +300,23 @@ export default function CaregiverScreen({
                     💡 Trình duyệt hiện tại chưa hỗ trợ Web Push. Trên iPhone, vui lòng bấm <strong>Chia sẻ &gt; Thêm vào MH chính</strong> để kích hoạt tính năng này.
                   </p>
                 ) : pushPermission === 'granted' ? (
-                  <p className="text-[11px] text-slate-400 leading-relaxed">
-                    🛡️ Thiết bị này đã sẵn sàng nhận thông báo khẩn cấp ngay trên màn hình khóa khi {elderlyName} kích hoạt SOS.
-                  </p>
+                  <div>
+                    <p className="text-[11px] text-slate-400 leading-relaxed mb-2">
+                      🛡️ Thiết bị này đã sẵn sàng nhận thông báo khẩn cấp ngay trên màn hình khóa khi {elderlyName} kích hoạt SOS.
+                    </p>
+                    <button
+                      type="button"
+                      data-testid="test-push-btn"
+                      onClick={async () => {
+                        setPushStatusMessage('Đang phát thông báo thử nghiệm...');
+                        const res = await pushNotificationService.testLocalNotification();
+                        setPushStatusMessage(res.message);
+                      }}
+                      className="w-full py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-indigo-300 font-bold text-[11px] rounded-xl border border-indigo-500/30 transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                    >
+                      <span>🧪 Bấm để gửi thử 1 chuông thông báo đến máy này</span>
+                    </button>
+                  </div>
                 ) : pushPermission === 'denied' ? (
                   <p className="text-[11px] text-rose-300/90 leading-relaxed">
                     ⚠️ Thông báo đang bị chặn. Vui lòng mở <strong>Cài đặt iPhone &gt; Safari &gt; Thông báo</strong> để bật lại cho SafeCheck.

@@ -464,6 +464,29 @@ export default function App() {
       .update({ status })
       .eq('family_code', activeFamilyCode)
       .eq('log_date', getTodayDate());
+
+    // NẾU TESTER BẤM SET SOS: Kích hoạt tạo sự kiện và phát Web Push thực tế
+    if (status === 'Emergency') {
+      const targetElderlyId = userProfile?.role === 'elderly' ? userProfile.id : linkedElderly?.id;
+      if (targetElderlyId) {
+        const { data: newEvent } = await supabase
+          .from('sos_events')
+          .insert({
+            elderly_id: targetElderlyId,
+            status: 'active',
+            trigger_source: 'button',
+          })
+          .select()
+          .single();
+
+        if (newEvent) {
+          console.log('[SafeCheck DevTool] Phát lệnh Web Push từ Dev Tool cho sự kiện:', newEvent.id);
+          pushNotificationService.sendEmergencyPush(newEvent.id);
+        }
+      }
+    } else if (status === 'Safe') {
+      handleResolveAlarm();
+    }
   };
 
   // Ghép nối gia đình (Con cháu gọi RPC connect_family)

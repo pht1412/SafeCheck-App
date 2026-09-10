@@ -66,9 +66,22 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'SOS event not found' });
     }
 
-    // Caller bắt buộc phải là chính Cụ bà sở hữu sự kiện
-    if (user.id !== sosEvent.elderly_id) {
-      return res.status(403).json({ error: 'Forbidden: Caller is not the owner of this SOS event' });
+    // Caller bắt buộc phải là Cụ bà sở hữu sự kiện HOẶC Con cháu đã liên kết (phục vụ test và báo động chéo)
+    const isOwner = user.id === sosEvent.elderly_id;
+    let isAuthorized = isOwner;
+    if (!isOwner) {
+      const { data: linkCheck } = await adminClient
+        .from('family_links')
+        .select('id')
+        .eq('elderly_id', sosEvent.elderly_id)
+        .eq('caregiver_id', user.id)
+        .eq('status', 'accepted')
+        .maybeSingle();
+      if (linkCheck) isAuthorized = true;
+    }
+
+    if (!isAuthorized) {
+      return res.status(403).json({ error: 'Forbidden: Caller is not authorized for this SOS event' });
     }
 
     // 3. ATOMIC IDEMPOTENCY CLAIM
@@ -99,37 +112,31 @@ export default async function handler(req, res) {
       });
     }
 
-    // 4. RESOLVE CAREGIVERS TỪ family_links (status = 'accepted')
-    const { data: links, error: linksError } = await adminClient
-      .from('family_links')
-      .select('caregiver_id')
-      .eq('elderly_id', sosEvent.elderly_id)
-      .eq('status', 'accepted');
+    // 4 & 5. RESOLVE CAREGIVERS & SUBSCRIPTIONS
+    // Ưu tiên 1: Gọi RPC get_caregiver_push_subscriptions (bypasses RLS an toàn bằng SECURITY DEFINER)
+    let subscriptions = [];
+    const { data: rpcSubs, error: rpcError } = await adminClient.rpc('get_caregiver_push_subscriptions', {
+      p_elderly_id: sosEvent.elderly_id,
+    });
 
-    if (linksError) {
-      console.error('[Dispatcher] Lỗi truy vấn family_links:', linksError);
-      return res.status(500).json({ error: 'Failed to resolve caregivers: ' + linksError.message });
-    }
+    if (!rpcError && Array.isArray(rpcSubs) && rpcSubs.length > 0) {
+      subscriptions = rpcSubs;
+    } else {
+      // Ưu tiên 2 (Fallback): Truy vấn trực tiếp qua bảng nếu có service_role
+      const { data: links } = await adminClient
+        .from('family_links')
+        .select('caregiver_id')
+        .eq('elderly_id', sosEvent.elderly_id)
+        .eq('status', 'accepted');
 
-    if (!links || links.length === 0) {
-      return res.status(200).json({
-        success: true,
-        message: 'SOS event recorded, but no caregivers are linked with accepted status',
-        dispatched_count: 0,
-      });
-    }
-
-    const caregiverIds = links.map((l) => l.caregiver_id);
-
-    // 5. RESOLVE SUBSCRIPTIONS
-    const { data: subscriptions, error: subsError } = await adminClient
-      .from('push_subscriptions')
-      .select('*')
-      .in('user_id', caregiverIds);
-
-    if (subsError) {
-      console.error('[Dispatcher] Lỗi truy vấn push_subscriptions:', subsError);
-      return res.status(500).json({ error: 'Failed to resolve subscriptions: ' + subsError.message });
+      if (links && links.length > 0) {
+        const caregiverIds = links.map((l) => l.caregiver_id);
+        const { data: directSubs } = await adminClient
+          .from('push_subscriptions')
+          .select('*')
+          .in('user_id', caregiverIds);
+        if (directSubs) subscriptions = directSubs;
+      }
     }
 
     if (!subscriptions || subscriptions.length === 0) {
