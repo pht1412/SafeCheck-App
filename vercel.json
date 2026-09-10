@@ -1,0 +1,10 @@
+{
+  "buildCommand": "cd safecheck-app && npm run build",
+  "outputDirectory": "safecheck-app/dist",
+  "rewrites": [
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ]
+}

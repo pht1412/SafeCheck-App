@@ -1,0 +1,19 @@
+@import "tailwindcss";
+
+/* Tối ưu hóa hiển thị cho iPhone 13 Pro Max (tai thỏ & thanh gạt Home iOS) */
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+body {
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+  padding-left: var(--sal);
+  padding-right: var(--sar);
+  min-height: 100dvh;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <title>SafeCheck - Ứng dụng an tâm cho người cao tuổi</title>
+    <meta name="description" content="SafeCheck - Giải pháp bảo vệ an toàn và kết nối khẩn cấp 1 chạm cho người cao tuổi và gia đình." />
+    
+    <!-- Viewport tối ưu cho iPhone 13 Pro Max (hỗ trợ tai thỏ và thanh gạt Home qua viewport-fit=cover) -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- Theme color và thanh trạng thái -->
+    <meta name="theme-color" content="#020617" />
+    <meta name="color-scheme" content="dark" />
+
+    <!-- Cấu hình PWA cho iOS Safari (iPhone 13 Pro Max) -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="SafeCheck" />
+    <link rel="apple-touch-icon" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png" />
+    <link rel="apple-touch-icon" sizes="512x512" href="/icon-512.png" />
+
+    <!-- Web App Manifest (Android Chrome & PWA standards) -->
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate icon" type="image/png" href="/icon-192.png" />
+  </head>
+  <body class="bg-slate-950 text-slate-100 antialiased overflow-x-hidden select-none">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,31 @@
+{
+  "name": "SafeCheck - Ứng Dụng An Tâm Cho Người Cao Tuổi",
+  "short_name": "SafeCheck",
+  "description": "Ứng dụng bảo vệ an tâm và hỗ trợ khẩn cấp 1 chạm cho người cao tuổi và gia đình",
+  "start_url": "/",
+  "id": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#020617",
+  "theme_color": "#020617",
+  "categories": ["medical", "health", "lifestyle"],
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

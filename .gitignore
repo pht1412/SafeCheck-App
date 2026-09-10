@@ -1,0 +1,23 @@
+# Node
+node_modules/
+
+# Supabase
+supabase/.temp/
+supabase/.branches/
+
+# Environment
+.env
+.env.*
+!.env.example
+*.local
+
+# Build & Test
+dist/
+playwright-report/
+test-results/
+blob-report/
+.cache/
+
+# OS
+.DS_Store
+Thumbs.db

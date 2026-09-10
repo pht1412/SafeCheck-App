@@ -1,0 +1,14 @@
+{
+  "name": "safecheck-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "description": "SafeCheck - Ứng dụng an tâm cho người cao tuổi",
+  "scripts": {
+    "db:push": "supabase db push",
+    "db:pull": "supabase db pull",
+    "db:diff": "supabase db diff"
+  },
+  "devDependencies": {
+    "supabase": "^2.116.0"
+  }
+}
