@@ -3,6 +3,7 @@ import { supabase } from './supabaseClient';
 import type { SystemState, UserProfile } from './types';
 import { SirenPlayer, playChimeSound } from './utils/sirenPlayer';
 import { authService } from './services/authService';
+import { pushNotificationService } from './services/pushNotificationService';
 import ElderlyScreen from './components/ElderlyScreen';
 import CaregiverScreen from './components/CaregiverScreen';
 import AuthScreen from './components/AuthScreen';
@@ -86,6 +87,27 @@ export default function App() {
     return () => {
       authListener.subscription.unsubscribe();
     };
+  }, []);
+
+  // 1b. Kiểm tra Deep-link SOS từ Web Push Notification (?sos=<sos_event_id>)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const urlParams = new URLSearchParams(window.location.search);
+    const sosId = urlParams.get('sos');
+    if (sosId) {
+      supabase
+        .from('sos_events')
+        .select('*')
+        .eq('id', sosId)
+        .maybeSingle()
+        .then(({ data, error }) => {
+          if (!error && data && data.status === 'active') {
+            console.log('[SafeCheck Deep-Link] Kích hoạt sự kiện khẩn cấp từ URL:', sosId);
+            setSystemState('Emergency');
+            setIsSirenMuted(false);
+          }
+        });
+    }
   }, []);
 
   // 2. Nếu là Con cháu (caregiver): Tìm Cụ đã liên kết trong family_links
@@ -297,6 +319,29 @@ export default function App() {
       setSosCountdown(null);
       setIsSirenMuted(false);
       triggerSensoryFeedback('Báo động khẩn cấp đã được gửi tới người thân');
+
+      // 1. Tạo sự kiện vào bảng sos_events (Source of Truth) & Kích hoạt Web Push ngoại tuyến
+      if (userProfile?.id && userProfile.role === 'elderly') {
+        supabase
+          .from('sos_events')
+          .insert({
+            elderly_id: userProfile.id,
+            status: 'active',
+            trigger_source: 'button',
+          })
+          .select()
+          .single()
+          .then(({ data: newEvent, error: insertErr }) => {
+            if (newEvent && !insertErr) {
+              console.log('[SafeCheck] Đã tạo sự kiện sos_events:', newEvent.id);
+              pushNotificationService.sendEmergencyPush(newEvent.id);
+            } else if (insertErr) {
+              console.error('[SafeCheck] Lỗi tạo sos_events:', insertErr);
+            }
+          });
+      }
+
+      // 2. Kích hoạt Realtime cập nhật trạng thái phòng
       if (activeFamilyCode) {
         supabase.rpc('trigger_sos', { p_family_code: activeFamilyCode }).then(({ error }) => {
           if (error) console.error('Lỗi gọi trigger_sos:', error);
@@ -389,6 +434,25 @@ export default function App() {
     const { error } = await supabase.rpc('resolve_alarm', { p_family_code: activeFamilyCode });
     if (error) {
       console.error('[SafeCheck] Lỗi resolve_alarm:', error);
+    }
+
+    // Cập nhật trạng thái sự kiện sos_events sang 'resolved'
+    if (userProfile?.id) {
+      const targetElderlyId = userProfile.role === 'caregiver' ? linkedElderly?.id : userProfile.id;
+      if (targetElderlyId) {
+        supabase
+          .from('sos_events')
+          .update({
+            status: 'resolved',
+            resolved_at: new Date().toISOString(),
+            resolved_by: userProfile.id,
+          })
+          .eq('elderly_id', targetElderlyId)
+          .eq('status', 'active')
+          .then(({ error: sosErr }) => {
+            if (sosErr) console.error('[SafeCheck] Lỗi cập nhật sos_events resolved:', sosErr);
+          });
+      }
     }
   };
 

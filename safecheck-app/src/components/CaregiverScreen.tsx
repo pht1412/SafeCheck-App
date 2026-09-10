@@ -3,6 +3,7 @@ import type { SystemState, EmergencyContact } from '../types';
 import { EmergencyContactsModal } from './EmergencyContactsModal';
 import { EmergencyContactsSettings } from './EmergencyContactsSettings';
 import { emergencyContactsService } from '../services/emergencyContactsService';
+import { pushNotificationService } from '../services/pushNotificationService';
 
 interface LinkedElderly {
   id: string;
@@ -58,6 +59,26 @@ export default function CaregiverScreen({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [emergencyContacts, setEmergencyContacts] = useState<EmergencyContact[]>([]);
   const [isLoadingContacts, setIsLoadingContacts] = useState(false);
+
+  // State quản lý Web Push Notification
+  const [pushPermission, setPushPermission] = useState<NotificationPermission>('default');
+  const [isPushSupported, setIsPushSupported] = useState<boolean>(false);
+  const [isSubscribingPush, setIsSubscribingPush] = useState<boolean>(false);
+  const [pushStatusMessage, setPushStatusMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setIsPushSupported(pushNotificationService.isPushSupported());
+    setPushPermission(pushNotificationService.getPermissionState());
+  }, []);
+
+  const handleEnablePush = async () => {
+    setIsSubscribingPush(true);
+    setPushStatusMessage(null);
+    const res = await pushNotificationService.subscribeToPush();
+    setPushPermission(pushNotificationService.getPermissionState());
+    setPushStatusMessage(res.message);
+    setIsSubscribingPush(false);
+  };
 
   const loadContacts = async () => {
     if (!linkedElderly?.id) {
@@ -238,6 +259,77 @@ export default function CaregiverScreen({
                   </div>
                 </div>
               )}
+
+              {/* Card Quản lý Cảnh báo Nền Web Push */}
+              <div
+                data-testid="push-notification-card"
+                className="mb-4 bg-slate-900/90 border border-slate-800 rounded-2xl p-3.5 text-xs shadow-md"
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="font-bold text-white flex items-center gap-1.5">
+                    <span>🔔</span>
+                    <span>Cảnh báo nền khi tắt app</span>
+                  </span>
+                  {pushPermission === 'granted' ? (
+                    <span
+                      data-testid="push-granted-badge"
+                      className="px-2 py-0.5 bg-emerald-950/80 border border-emerald-500/40 text-emerald-300 text-[10px] font-bold rounded-full flex items-center gap-1"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Đã bật
+                    </span>
+                  ) : pushPermission === 'denied' ? (
+                    <span
+                      data-testid="push-denied-badge"
+                      className="px-2 py-0.5 bg-rose-950/80 border border-rose-500/40 text-rose-300 text-[10px] font-bold rounded-full"
+                    >
+                      Bị chặn
+                    </span>
+                  ) : (
+                    <span
+                      data-testid="push-default-badge"
+                      className="px-2 py-0.5 bg-amber-950/80 border border-amber-500/40 text-amber-300 text-[10px] font-bold rounded-full"
+                    >
+                      Chưa bật
+                    </span>
+                  )}
+                </div>
+
+                {!isPushSupported ? (
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    💡 Trình duyệt hiện tại chưa hỗ trợ Web Push. Trên iPhone, vui lòng bấm <strong>Chia sẻ &gt; Thêm vào MH chính</strong> để kích hoạt tính năng này.
+                  </p>
+                ) : pushPermission === 'granted' ? (
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    🛡️ Thiết bị này đã sẵn sàng nhận thông báo khẩn cấp ngay trên màn hình khóa khi {elderlyName} kích hoạt SOS.
+                  </p>
+                ) : pushPermission === 'denied' ? (
+                  <p className="text-[11px] text-rose-300/90 leading-relaxed">
+                    ⚠️ Thông báo đang bị chặn. Vui lòng mở <strong>Cài đặt iPhone &gt; Safari &gt; Thông báo</strong> để bật lại cho SafeCheck.
+                  </p>
+                ) : (
+                  <div>
+                    <p className="text-[11px] text-slate-400 mb-2 leading-relaxed">
+                      Nhận chuông báo động đỏ trên màn hình khóa khi {elderlyName} gặp sự cố, kể cả khi bạn đã khóa màn hình.
+                    </p>
+                    <button
+                      type="button"
+                      data-testid="enable-push-btn"
+                      onClick={handleEnablePush}
+                      disabled={isSubscribingPush}
+                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-indigo-950/50 flex items-center justify-center gap-1.5"
+                    >
+                      <span>{isSubscribingPush ? 'Đang kích hoạt...' : '🔔 BẬT CẢNH BÁO NỀN KHI TẮT APP'}</span>
+                    </button>
+                  </div>
+                )}
+
+                {pushStatusMessage && (
+                  <p className="text-[10px] text-indigo-300 mt-2 text-center animate-pulse">
+                    {pushStatusMessage}
+                  </p>
+                )}
+              </div>
 
               <div className="bg-slate-900/90 rounded-2xl p-3 mb-4 flex justify-around text-xs text-slate-300 border border-slate-800">
                 <div>
