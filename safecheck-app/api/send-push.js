@@ -13,7 +13,7 @@ const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPA
 
 const rawPublicKey = process.env.VAPID_PUBLIC_KEY || process.env.VITE_VAPID_PUBLIC_KEY || '';
 const rawPrivateKey = process.env.VAPID_PRIVATE_KEY || '';
-const rawSubject = process.env.VAPID_SUBJECT || 'mailto:contact@safecheck.app';
+const rawSubject = process.env.VAPID_SUBJECT || '';
 
 const VAPID_PUBLIC_KEY = rawPublicKey.trim().replace(/^["']|["']$/g, '');
 const VAPID_PRIVATE_KEY = rawPrivateKey.trim().replace(/^["']|["']$/g, '');
@@ -44,7 +44,7 @@ export default async function handler(req, res) {
   }
 
   const token = authHeader.split(' ')[1];
-  
+
   // Khởi tạo client xác thực người gọi
   const authClient = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const {
