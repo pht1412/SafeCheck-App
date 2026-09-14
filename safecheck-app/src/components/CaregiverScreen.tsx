@@ -372,7 +372,7 @@ export default function CaregiverScreen({
                 {/* Pin cục bộ con cháu - Minh bạch nguồn gốc, không fake thông tin */}
                 <div className="flex items-center gap-1.5">
                   <span>{isCharging ? '⚡' : '🔋'}</span>
-                  <span>Pin máy này:</span>
+                  <span>Pin:</span>
                   <strong className={batteryLevel !== null && batteryLevel <= 20 ? "text-rose-400 font-bold animate-pulse" : "text-white font-bold"}>
                     {batteryLevel !== null ? `${batteryLevel}%` : 'Không khả dụng (iOS)'}
                   </strong>
@@ -382,32 +382,31 @@ export default function CaregiverScreen({
 
                 {/* Trạng thái kết nối suy luận từ ConnectionHealth */}
                 <div className="flex items-center gap-1.5">
-                  <span className={`w-2 h-2 rounded-full ${
-                    connectionHealth === 'healthy'
+                  <span className={`w-2 h-2 rounded-full ${connectionHealth === 'healthy'
                       ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'
                       : connectionHealth === 'connecting'
-                      ? 'bg-amber-400 animate-ping'
-                      : connectionHealth === 'reconnecting'
-                      ? 'bg-amber-500 animate-pulse'
-                      : 'bg-rose-500 animate-pulse'
-                  }`} />
+                        ? 'bg-amber-400 animate-ping'
+                        : connectionHealth === 'reconnecting'
+                          ? 'bg-amber-500 animate-pulse'
+                          : 'bg-rose-500 animate-pulse'
+                    }`} />
                   <span>Kết nối:</span>
                   <strong className={
                     connectionHealth === 'healthy'
                       ? 'text-emerald-400 font-bold'
                       : connectionHealth === 'connecting'
-                      ? 'text-amber-400 font-bold'
-                      : connectionHealth === 'reconnecting'
-                      ? 'text-amber-500 font-bold'
-                      : 'text-rose-400 font-bold'
+                        ? 'text-amber-400 font-bold'
+                        : connectionHealth === 'reconnecting'
+                          ? 'text-amber-500 font-bold'
+                          : 'text-rose-400 font-bold'
                   }>
                     {connectionHealth === 'healthy'
                       ? 'Đã kết nối'
                       : connectionHealth === 'connecting'
-                      ? 'Đang kết nối...'
-                      : connectionHealth === 'reconnecting'
-                      ? 'Đang kết nối lại'
-                      : 'Mất mạng (Offline)'}
+                        ? 'Đang kết nối...'
+                        : connectionHealth === 'reconnecting'
+                          ? 'Đang kết nối lại'
+                          : 'Mất mạng (Offline)'}
                   </strong>
                 </div>
               </div>
