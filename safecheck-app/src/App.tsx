@@ -7,6 +7,7 @@ import { pushNotificationService } from './services/pushNotificationService';
 import ElderlyScreen from './components/ElderlyScreen';
 import CaregiverScreen from './components/CaregiverScreen';
 import AuthScreen from './components/AuthScreen';
+import { useDeviceStatus, deriveConnectionHealth, type RealtimeStatus } from './hooks/useDeviceStatus';
 
 interface LinkedElderly {
   id: string;
@@ -27,7 +28,8 @@ export default function App() {
   const [systemState, setSystemState] = useState<SystemState>('Waiting');
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
   const [pingCooldown, setPingCooldown] = useState<number>(0);
-  const [batteryLevel] = useState<number>(85);
+  const { batteryLevel, isCharging, networkStatus } = useDeviceStatus();
+  const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting');
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
   // States quản lý quy trình SOS chống bấm nhầm
@@ -196,9 +198,11 @@ export default function App() {
     if (!activeFamilyCode) {
       setSystemState('Waiting');
       setCheckInTime(null);
+      setRealtimeStatus(supabase.realtime.isConnected() ? 'connected' : 'connecting');
       return;
     }
 
+    setRealtimeStatus('connecting');
     setIsLoading(true);
     async function fetchStatus() {
       const today = getTodayDate();
@@ -256,7 +260,13 @@ export default function App() {
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          setRealtimeStatus('connected');
+        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          setRealtimeStatus('disconnected');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
@@ -569,6 +579,9 @@ export default function App() {
     );
   }
 
+  // Suy luận sức khỏe kết nối (Derived connectionHealth)
+  const connectionHealth = deriveConnectionHealth(networkStatus, realtimeStatus);
+
   // 4. ĐÃ ĐĂNG NHẬP: Điều hướng phân quyền Role (Role-based Navigation)
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-0 sm:p-4 flex flex-col items-center justify-center font-sans">
@@ -578,6 +591,7 @@ export default function App() {
           systemState={systemState}
           checkInTime={checkInTime}
           batteryLevel={batteryLevel}
+          isCharging={isCharging}
           sosHolding={sosHolding}
           sosCountdown={sosCountdown}
           elderlyName={userProfile.full_name}
@@ -597,6 +611,8 @@ export default function App() {
           systemState={systemState}
           checkInTime={checkInTime}
           batteryLevel={batteryLevel}
+          isCharging={isCharging}
+          connectionHealth={connectionHealth}
           pingCooldown={pingCooldown}
           isPingAllowed={isPingAllowed}
           isSirenMuted={isSirenMuted}

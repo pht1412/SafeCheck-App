@@ -3,7 +3,8 @@ import type { SystemState } from '../types';
 interface ElderlyScreenProps {
   systemState: SystemState;
   checkInTime: string | null;
-  batteryLevel: number;
+  batteryLevel: number | null;
+  isCharging?: boolean;
   sosHolding: boolean;
   sosCountdown: number | null;
   elderlyName?: string;
@@ -20,6 +21,7 @@ export default function ElderlyScreen({
   systemState,
   checkInTime,
   batteryLevel,
+  isCharging = false,
   sosHolding,
   sosCountdown,
   elderlyName,
@@ -62,7 +64,23 @@ export default function ElderlyScreen({
               )}
             </div>
           </div>
-          <span>Pin: {batteryLevel}%</span>
+          <div className="flex items-center gap-1 text-xs">
+            {isCharging && <span className="text-amber-400 text-xs">⚡</span>}
+            <span
+              className={`font-semibold ${
+                batteryLevel !== null && batteryLevel <= 20 && !isCharging
+                  ? 'text-rose-400 font-black animate-pulse'
+                  : 'text-slate-300'
+              }`}
+            >
+              {batteryLevel !== null ? `Pin: ${batteryLevel}%` : 'Pin: --%'}
+            </span>
+            {batteryLevel !== null && batteryLevel <= 20 && !isCharging && (
+              <span className="text-[10px] text-rose-400 font-bold ml-0.5">
+                (Cụ nhớ cắm sạc)
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Cơ chế đếm ngược chống bấm nhầm 10 giây */}

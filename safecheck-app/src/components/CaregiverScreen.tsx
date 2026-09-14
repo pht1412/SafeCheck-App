@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import type { SystemState, EmergencyContact } from '../types';
+import type { ConnectionHealth } from '../hooks/useDeviceStatus';
 import { EmergencyContactsModal } from './EmergencyContactsModal';
 import { EmergencyContactsSettings } from './EmergencyContactsSettings';
 import { emergencyContactsService } from '../services/emergencyContactsService';
@@ -15,7 +16,9 @@ interface LinkedElderly {
 interface CaregiverScreenProps {
   systemState: SystemState;
   checkInTime: string | null;
-  batteryLevel: number;
+  batteryLevel: number | null;
+  isCharging?: boolean;
+  connectionHealth?: ConnectionHealth;
   pingCooldown: number;
   isPingAllowed: boolean;
   isSirenMuted: boolean;
@@ -34,6 +37,8 @@ export default function CaregiverScreen({
   systemState,
   checkInTime,
   batteryLevel,
+  isCharging = false,
+  connectionHealth = 'healthy',
   pingCooldown,
   isPingAllowed,
   isSirenMuted,
@@ -300,22 +305,40 @@ export default function CaregiverScreen({
                     💡 Trình duyệt hiện tại chưa hỗ trợ Web Push. Trên iPhone, vui lòng bấm <strong>Chia sẻ &gt; Thêm vào MH chính</strong> để kích hoạt tính năng này.
                   </p>
                 ) : pushPermission === 'granted' ? (
-                  <div>
-                    <p className="text-[11px] text-slate-400 leading-relaxed mb-2">
-                      🛡️ Thiết bị này đã sẵn sàng nhận thông báo khẩn cấp ngay trên màn hình khóa khi {elderlyName} kích hoạt SOS.
-                    </p>
-                    <button
-                      type="button"
-                      data-testid="test-push-btn"
-                      onClick={async () => {
-                        setPushStatusMessage('Đang phát thông báo thử nghiệm...');
-                        const res = await pushNotificationService.testLocalNotification();
-                        setPushStatusMessage(res.message);
-                      }}
-                      className="w-full py-2 bg-slate-800 hover:bg-slate-700 active:scale-95 text-indigo-300 font-bold text-[11px] rounded-xl border border-indigo-500/30 transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                    >
-                      <span>🧪 Bấm để gửi thử 1 chuông thông báo đến máy này</span>
-                    </button>
+                  <div className="space-y-2">
+                    {/* Thẻ trạng thái chuẩn mực ngữ nghĩa: KHÔNG dùng '24/7' hay 'Hệ thống bảo vệ' */}
+                    <div className="bg-emerald-950/40 border border-emerald-500/30 rounded-xl p-3 flex items-center gap-3 shadow-sm">
+                      <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 text-base shrink-0">
+                        🛡️
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                          <span className="text-xs font-bold text-emerald-300">Thiết bị đã bật cảnh báo nền</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                          Sẵn sàng tiếp nhận tín hiệu SOS từ {elderlyName} khi có sự cố
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Nút test kiểm thử: ĐẶC BIỆT KHÓA CHẶT, CHỈ HIỂN THỊ KHI LÀ TESTER (test01@gmail.com) */}
+                    {isTester && (
+                      <div className="pt-1">
+                        <button
+                          type="button"
+                          data-testid="test-push-btn"
+                          onClick={async () => {
+                            setPushStatusMessage('Đang phát chuông thử nghiệm...');
+                            const res = await pushNotificationService.testLocalNotification();
+                            setPushStatusMessage(res.message);
+                          }}
+                          className="w-full py-2 bg-slate-800/80 hover:bg-slate-700 active:scale-95 text-indigo-300 font-mono text-[10px] rounded-xl border border-indigo-500/30 transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                        >
+                          <span>🧪 [Tester] Bấm gửi thử 1 chuông thông báo</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ) : pushPermission === 'denied' ? (
                   <p className="text-[11px] text-rose-300/90 leading-relaxed">
@@ -345,13 +368,47 @@ export default function CaregiverScreen({
                 )}
               </div>
 
-              <div className="bg-slate-900/90 rounded-2xl p-3 mb-4 flex justify-around text-xs text-slate-300 border border-slate-800">
-                <div>
-                  Pin: <strong className="text-white">{batteryLevel}%</strong>
+              <div className="bg-slate-900/90 rounded-2xl p-3 mb-4 flex justify-around items-center text-xs text-slate-300 border border-slate-800 shadow-inner">
+                {/* Pin cục bộ con cháu - Minh bạch nguồn gốc, không fake thông tin */}
+                <div className="flex items-center gap-1.5">
+                  <span>{isCharging ? '⚡' : '🔋'}</span>
+                  <span>Pin máy này:</span>
+                  <strong className={batteryLevel !== null && batteryLevel <= 20 ? "text-rose-400 font-bold animate-pulse" : "text-white font-bold"}>
+                    {batteryLevel !== null ? `${batteryLevel}%` : 'Không khả dụng (iOS)'}
+                  </strong>
                 </div>
-                <div>|</div>
-                <div>
-                  Server: <strong className="text-emerald-400">Đã kết nối</strong>
+
+                <div className="text-slate-700">|</div>
+
+                {/* Trạng thái kết nối suy luận từ ConnectionHealth */}
+                <div className="flex items-center gap-1.5">
+                  <span className={`w-2 h-2 rounded-full ${
+                    connectionHealth === 'healthy'
+                      ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'
+                      : connectionHealth === 'connecting'
+                      ? 'bg-amber-400 animate-ping'
+                      : connectionHealth === 'reconnecting'
+                      ? 'bg-amber-500 animate-pulse'
+                      : 'bg-rose-500 animate-pulse'
+                  }`} />
+                  <span>Kết nối:</span>
+                  <strong className={
+                    connectionHealth === 'healthy'
+                      ? 'text-emerald-400 font-bold'
+                      : connectionHealth === 'connecting'
+                      ? 'text-amber-400 font-bold'
+                      : connectionHealth === 'reconnecting'
+                      ? 'text-amber-500 font-bold'
+                      : 'text-rose-400 font-bold'
+                  }>
+                    {connectionHealth === 'healthy'
+                      ? 'Đã kết nối'
+                      : connectionHealth === 'connecting'
+                      ? 'Đang kết nối...'
+                      : connectionHealth === 'reconnecting'
+                      ? 'Đang kết nối lại'
+                      : 'Mất mạng (Offline)'}
+                  </strong>
                 </div>
               </div>
 
