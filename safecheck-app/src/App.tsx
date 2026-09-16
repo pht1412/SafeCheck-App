@@ -64,14 +64,42 @@ export default function App() {
     }
   };
 
-  // 1. Kiểm tra Session tự động (Persistent Session)
+  // 1. Kiểm tra Session tự động (Persistent Session & Offline Cache)
   useEffect(() => {
     async function checkAuthSession() {
       try {
         const session = await authService.getSession();
         if (session?.user) {
+          // Lấy profile từ cache offline trước (chống văng màn hình đăng nhập khi mất mạng)
+          const cached = localStorage.getItem('safecheck_cached_profile');
+          if (cached) {
+            try {
+              setUserProfile(JSON.parse(cached));
+            } catch (e) {
+              console.warn('Lỗi đọc cache profile:', e);
+            }
+          }
+
+          // Lấy profile cập nhật mới nhất từ Supabase (nếu có mạng)
           const profile = await authService.fetchProfile(session.user.id);
-          setUserProfile(profile);
+          if (profile) {
+            setUserProfile(profile);
+            localStorage.setItem('safecheck_cached_profile', JSON.stringify(profile));
+          } else if (!cached) {
+            // Fallback an toàn từ session metadata nếu không có mạng và chưa có cache
+            const meta = session.user.user_metadata || {};
+            const fallbackProfile: UserProfile = {
+              id: session.user.id,
+              email: session.user.email || '',
+              full_name: meta.full_name || 'Người dùng',
+              role: meta.role || 'elderly',
+              avatar_url: meta.avatar_url || null,
+              phone: meta.phone || '',
+              pairing_code: meta.pairing_code || null,
+            };
+            setUserProfile(fallbackProfile);
+            localStorage.setItem('safecheck_cached_profile', JSON.stringify(fallbackProfile));
+          }
         }
       } catch (err) {
         console.error('Lỗi kiểm tra phiên đăng nhập:', err);
@@ -86,11 +114,15 @@ export default function App() {
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (event === 'SIGNED_OUT') {
+          localStorage.removeItem('safecheck_cached_profile');
           setUserProfile(null);
           setLinkedElderly(null);
         } else if (session?.user && !userProfile) {
           const profile = await authService.fetchProfile(session.user.id);
-          setUserProfile(profile);
+          if (profile) {
+            setUserProfile(profile);
+            localStorage.setItem('safecheck_cached_profile', JSON.stringify(profile));
+          }
         }
       }
     );
@@ -662,6 +694,7 @@ export default function App() {
   // Đăng xuất
   const handleSignOut = async () => {
     await authService.signOut();
+    localStorage.removeItem('safecheck_cached_profile');
     setUserProfile(null);
     setLinkedElderly(null);
   };
