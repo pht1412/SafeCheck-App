@@ -81,3 +81,115 @@ self.addEventListener('notificationclick', (event) => {
       })
   );
 });
+
+// ==============================================================================
+// 3. LẮNG NGHE SỰ KIỆN BACKGROUND SYNC (W3C SYNC API)
+// Tự động gửi bù tín hiệu SOS khi thiết bị bắt lại kết nối Internet
+// Tuân thủ: PRD_Deep_v1.md (v3.0) & implementation_plan.md
+// ==============================================================================
+const SW_SUPABASE_URL = 'https://bozuzbmgnzzxyrioxzaa.supabase.co';
+const SW_SUPABASE_ANON_KEY = 'sb_publishable_ZQjFvvLTLywvw4rKJIPU9Q_5iR_78Rr';
+const SW_DB_NAME = 'safecheck_offline_db';
+const SW_STORE_NAME = 'offline_sos_queue';
+
+function swOpenDB() {
+  return new Promise((resolve, reject) => {
+    if (!('indexedDB' in self)) return reject(new Error('IndexedDB không tồn tại trong SW'));
+    const req = indexedDB.open(SW_DB_NAME, 1);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function flushPendingOfflineSOSFromSW() {
+  let db;
+  try {
+    db = await swOpenDB();
+  } catch (err) {
+    console.warn('[SW-Sync] Không thể mở IndexedDB:', err);
+    return;
+  }
+
+  const items = await new Promise((resolve) => {
+    const tx = db.transaction(SW_STORE_NAME, 'readonly');
+    const store = tx.objectStore(SW_STORE_NAME);
+    const req = store.getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => resolve([]);
+  });
+
+  const pending = items.filter(
+    (item) =>
+      item.db_status !== 'FAILED_PERMANENTLY' &&
+      (item.db_status !== 'SERVER_ACKED' || item.push_status !== 'DISPATCHED')
+  );
+
+  for (const item of pending) {
+    try {
+      let sosEventId = item.sos_event_id;
+
+      // Pha 1: Đồng bộ Database nếu chưa nhận SERVER_ACK
+      if (item.db_status !== 'SERVER_ACKED' && item.access_token) {
+        const rpcRes = await fetch(`${SW_SUPABASE_URL}/rest/v1/rpc/create_sos_event_idempotent`, {
+          method: 'POST',
+          headers: {
+            apikey: SW_SUPABASE_ANON_KEY,
+            Authorization: `Bearer ${item.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            p_elderly_id: item.elderly_id,
+            p_client_event_id: item.client_event_id,
+            p_trigger_source: item.trigger_source,
+          }),
+        });
+
+        if (rpcRes.ok) {
+          const rpcData = await rpcRes.json();
+          sosEventId = rpcData?.sos_event_id;
+          item.db_status = 'SERVER_ACKED';
+          item.server_ack_at = Date.now();
+          item.sos_event_id = sosEventId;
+          item.push_status = 'DISPATCH_PENDING';
+        } else if (rpcRes.status === 400 || rpcRes.status === 403) {
+          item.db_status = 'FAILED_PERMANENTLY';
+        }
+      }
+
+      // Pha 2: Gửi Web Push nếu đã nhận SERVER_ACK và chưa dispatch
+      if (item.db_status === 'SERVER_ACKED' && item.push_status !== 'DISPATCHED' && sosEventId && item.access_token) {
+        const pushRes = await fetch('/api/send-push', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${item.access_token}`,
+          },
+          body: JSON.stringify({ sos_event_id: sosEventId }),
+        });
+
+        if (pushRes.ok) {
+          item.push_status = 'DISPATCHED';
+        } else {
+          item.push_status = 'FAILED';
+        }
+      }
+
+      // Cập nhật lại vào IndexedDB
+      await new Promise((resolve) => {
+        const tx = db.transaction(SW_STORE_NAME, 'readwrite');
+        const store = tx.objectStore(SW_STORE_NAME);
+        const req = store.put(item);
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+      });
+    } catch (e) {
+      console.warn('[SW-Sync] Lỗi xử lý item:', e);
+    }
+  }
+}
+
+self.addEventListener('sync', (event) => {
+  if (event.tag === 'sync-sos-event') {
+    event.waitUntil(flushPendingOfflineSOSFromSW());
+  }
+});

@@ -30,33 +30,33 @@ test.describe('Module 04: Bảo mật & Các trường hợp biên (Security & E
 
   // ===================================================================
   // TEST CASE 2: Trường hợp biên (Edge Case) - Nhập sai mã ghép nối Cụ
+  // Sử dụng tài khoản test02@gmail.com (tài khoản không liên kết với Cụ nào)
   // ===================================================================
   test('TC02: Con cháu nhập mã ghép nối sai -> Hệ thống chặn và báo lỗi', async ({ page }) => {
     // 1. Đăng nhập tài khoản test02
     await page.goto('/');
-    await page.getByPlaceholder('0901234567 hoặc conchau@gmail.com').fill('Test03@gmail.com');
-    await page.getByPlaceholder('Tối thiểu 6 ký tự').fill('Test03@gmail.com');
+    await page.getByPlaceholder('0901234567 hoặc conchau@gmail.com').fill('test02@gmail.com');
+    await page.getByPlaceholder('Tối thiểu 6 ký tự').fill('test02@gmail.com');
     await page.getByRole('button', { name: 'ĐĂNG NHẬP', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Đăng xuất' })).toBeVisible({ timeout: 10000 });
 
-    // 2. Nếu con cháu đang ở màn hình trống, tìm nút kết nối
+    // 2. Vì test02 không có liên kết, nút "+ KẾT NỐI VỚI CỤ NGAY" chắc chắn xuất hiện
     const connectBtn = page.getByRole('button', { name: '+ KẾT NỐI VỚI CỤ NGAY' });
-    if (await connectBtn.isVisible()) {
-      await connectBtn.click();
+    await expect(connectBtn).toBeVisible({ timeout: 10000 });
+    await connectBtn.click();
 
-      // 3. Nhập một mã ghép hoàn toàn sai (không tồn tại trong hệ thống)
-      const codeInput = page.getByPlaceholder('Ví dụ: 8B29JG');
-      await codeInput.fill('SAI999');
+    // 3. Nhập một mã ghép hoàn toàn sai (không tồn tại trong hệ thống)
+    const codeInput = page.getByPlaceholder('Ví dụ: 8B29JG');
+    await codeInput.fill('SAI999');
 
-      // 4. Bấm xác nhận
-      await page.getByRole('button', { name: 'Xác nhận' }).click();
+    // 4. Bấm xác nhận
+    await page.getByRole('button', { name: 'Xác nhận' }).click();
 
-      // 5. Kiểm chứng: Modal KHÔNG được đóng, hiển thị thông báo lỗi từ RPC Supabase
-      // Lớp thông báo lỗi màu đỏ xuất hiện trong modal
-      const errorBox = page.locator('div.bg-rose-950');
-      await expect(errorBox).toBeVisible({ timeout: 10000 });
-      console.log('[Test TC02] Đã chặn thành công mã ghép sai và báo lỗi.');
-    }
+    // 5. Kiểm chứng: Modal KHÔNG được đóng, hiển thị thông báo lỗi từ RPC Supabase
+    // Lớp thông báo lỗi màu đỏ xuất hiện trong modal
+    const errorBox = page.locator('div.bg-rose-950');
+    await expect(errorBox).toBeVisible({ timeout: 10000 });
+    console.log('[Test TC02] Đã chặn thành công mã ghép sai và báo lỗi.');
   });
 
   // ===================================================================

@@ -1,4 +1,17 @@
 import { test, expect } from '@playwright/test';
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://bozuzbmgnzzxyrioxzaa.supabase.co';
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_ZQjFvvLTLywvw4rKJIPU9Q_5iR_78Rr';
+
+// Helper tự động dọn dẹp liên kết gia đình cho một tài khoản (không cần vào SQL Editor)
+async function unlinkCaregiver(email: string, password: string) {
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const { data: auth } = await sb.auth.signInWithPassword({ email, password });
+  if (auth?.user) {
+    await sb.from('family_links').delete().eq('caregiver_id', auth.user.id);
+  }
+}
 
 test.describe('Module 03: Màn hình Con cháu & Đồng bộ Realtime (Caregiver & Realtime)', () => {
   test.describe.configure({ mode: 'serial' });
@@ -142,88 +155,87 @@ test.describe('Module 03: Màn hình Con cháu & Đồng bộ Realtime (Caregive
   // Sử dụng tài khoản người dùng bình thường: test02@gmail.com
   // ===================================================================
   test('TC04: Con cháu (test02) nhập mã kết nối Cụ từ màn hình trống thành công', async ({ browser }) => {
-    // -----------------------------------------------------------------
-    // BƯỚC A: MỞ CỬA SỔ CỤ ĐỂ LẤY MÃ GHÉP NỐI (PAIRING CODE) THỰC TẾ
-    // -----------------------------------------------------------------
+    // 0. Đảm bảo test02@gmail.com luôn bắt đầu từ trạng thái chưa liên kết với bất kỳ Cụ nào
+    await unlinkCaregiver('test02@gmail.com', 'test02@gmail.com');
+
     // Tạo context độc lập cho máy của Cụ
     const contextElderly = await browser.newContext();
     const pageElderly = await contextElderly.newPage();
 
-    // Cụ đăng nhập vào hệ thống
-    await pageElderly.goto('/');
-    await pageElderly.getByPlaceholder('0901234567 hoặc conchau@gmail.com').fill('0123456789');
-    await pageElderly.getByPlaceholder('Tối thiểu 6 ký tự').fill('123456');
-    await pageElderly.getByRole('button', { name: 'ĐĂNG NHẬP', exact: true }).click();
-    await expect(pageElderly.getByTestId('elderly-device')).toBeVisible({ timeout: 10000 });
-
-    // Robot đọc trực tiếp mã ghép 6 ký tự hiển thị ở góc trên máy của Cụ
-    const pairingCodeLocator = pageElderly.getByTestId('elderly-pairing-code');
-    await expect(pairingCodeLocator).toBeVisible();
-    const actualPairingCode = (await pairingCodeLocator.innerText()).trim();
-    console.log(`[Test TC04] Đã lấy được mã ghép nối từ máy Cụ: ${actualPairingCode}`);
-
-    // -----------------------------------------------------------------
-    // BƯỚC B: MỞ CỬA SỔ CON CHÁU (test02@gmail.com) - MÀN HÌNH TRỐNG
-    // -----------------------------------------------------------------
     // Tạo context độc lập thứ 2 cho tài khoản người dùng bình thường test02
     const contextCaregiver = await browser.newContext();
     const pageCaregiver = await contextCaregiver.newPage();
 
-    // Con cháu đăng nhập
-    await pageCaregiver.goto('/');
-    await pageCaregiver.getByPlaceholder('0901234567 hoặc conchau@gmail.com').fill('test02@gmail.com');
-    await pageCaregiver.getByPlaceholder('Tối thiểu 6 ký tự').fill('test02@gmail.com');
-    await pageCaregiver.getByRole('button', { name: 'ĐĂNG NHẬP', exact: true }).click();
+    try {
+      // -----------------------------------------------------------------
+      // BƯỚC A: MỞ CỬA SỔ CỤ ĐỂ LẤY MÃ GHÉP NỐI (PAIRING CODE) THỰC TẾ
+      // -----------------------------------------------------------------
+      await pageElderly.goto('/');
+      await pageElderly.getByPlaceholder('0901234567 hoặc conchau@gmail.com').fill('0123456789');
+      await pageElderly.getByPlaceholder('Tối thiểu 6 ký tự').fill('123456');
+      await pageElderly.getByRole('button', { name: 'ĐĂNG NHẬP', exact: true }).click();
+      await expect(pageElderly.getByTestId('elderly-device')).toBeVisible({ timeout: 10000 });
 
-    // Đợi vào màn hình Con cháu
-    await expect(pageCaregiver.getByRole('button', { name: 'Đăng xuất' })).toBeVisible({ timeout: 10000 });
+      // Đọc trực tiếp mã ghép 6 ký tự hiển thị ở góc trên máy của Cụ
+      const pairingCodeLocator = pageElderly.getByTestId('elderly-pairing-code');
+      await expect(pairingCodeLocator).toBeVisible();
+      const actualPairingCode = (await pairingCodeLocator.innerText()).trim();
+      console.log(`[Test TC04] Đã lấy được mã ghép nối từ máy Cụ: ${actualPairingCode}`);
 
-    // -----------------------------------------------------------------
-    // BƯỚC C: KIỂM CHỨNG TRẠNG THÁI MÀN HÌNH TRỐNG & BẢO MẬT USER THƯỜNG
-    // -----------------------------------------------------------------
-    // 1. Phải thấy tiêu đề "Chưa kết nối người thân"
-    await expect(pageCaregiver.getByText('Chưa kết nối người thân')).toBeVisible();
+      // -----------------------------------------------------------------
+      // BƯỚC B: MỞ CỬA SỔ CON CHÁU (test02@gmail.com) - MÀN HÌNH TRỐNG
+      // -----------------------------------------------------------------
+      await pageCaregiver.goto('/');
+      await pageCaregiver.getByPlaceholder('0901234567 hoặc conchau@gmail.com').fill('test02@gmail.com');
+      await pageCaregiver.getByPlaceholder('Tối thiểu 6 ký tự').fill('test02@gmail.com');
+      await pageCaregiver.getByRole('button', { name: 'ĐĂNG NHẬP', exact: true }).click();
 
-    // 2. Bảo mật: Vì test02 là user thông thường, TUYỆT ĐỐI KHÔNG có thanh Dev Tool
-    await expect(pageCaregiver.getByText(/Mô phỏng trạng thái \(Dev Tool\)/)).not.toBeVisible();
+      // Đợi vào màn hình Con cháu
+      await expect(pageCaregiver.getByRole('button', { name: 'Đăng xuất' })).toBeVisible({ timeout: 10000 });
 
-    // 3. Phải có nút "+ KẾT NỐI VỚI CỤ NGAY" màu tím nổi bật
-    const connectBtn = pageCaregiver.getByRole('button', { name: '+ KẾT NỐI VỚI CỤ NGAY' });
-    await expect(connectBtn).toBeVisible();
+      // -----------------------------------------------------------------
+      // BƯỚC C: KIỂM CHỨNG TRẠNG THÁI MÀN HÌNH TRỐNG & BẢO MẬT USER THƯỜNG
+      // -----------------------------------------------------------------
+      // 1. Phải thấy tiêu đề "Chưa kết nối người thân"
+      await expect(pageCaregiver.getByText('Chưa kết nối người thân')).toBeVisible();
 
-    // -----------------------------------------------------------------
-    // BƯỚC D: BẤM NÚT & NHẬP MÃ GHÉP NỐI VÀO MODAL
-    // -----------------------------------------------------------------
-    // Bấm mở modal kết nối
-    await connectBtn.click();
+      // 2. Bảo mật: Vì test02 là user thông thường, TUYỆT ĐỐI KHÔNG có thanh Dev Tool
+      await expect(pageCaregiver.getByText(/Mô phỏng trạng thái \(Dev Tool\)/)).not.toBeVisible();
 
-    // Kiểm tra modal xuất hiện với tiêu đề "Kết nối với Cụ"
-    // Dùng getByRole('heading') để tránh nhầm với nút "+ KẾT NỐI VỚI CỤ NGAY" (Strict Mode)
-    await expect(pageCaregiver.getByRole('heading', { name: 'Kết nối với Cụ' })).toBeVisible();
+      // 3. Phải có nút "+ KẾT NỐI VỚI CỤ NGAY" màu tím nổi bật
+      const connectBtn = pageCaregiver.getByRole('button', { name: '+ KẾT NỐI VỚI CỤ NGAY' });
+      await expect(connectBtn).toBeVisible();
 
-    // Điền mã 6 ký tự vừa lấy được từ máy Cụ vào ô input
-    const codeInput = pageCaregiver.getByPlaceholder('Ví dụ: 8B29JG');
-    await codeInput.fill(actualPairingCode);
+      // -----------------------------------------------------------------
+      // BƯỚC D: BẤM NÚT & NHẬP MÃ GHÉP NỐI VÀO MODAL
+      // -----------------------------------------------------------------
+      await connectBtn.click();
+      await expect(pageCaregiver.getByRole('heading', { name: 'Kết nối với Cụ' })).toBeVisible();
 
-    // Bấm nút "Xác nhận" để gửi RPC connect_family lên Supabase
-    const submitBtn = pageCaregiver.getByRole('button', { name: 'Xác nhận' });
-    await submitBtn.click();
+      const codeInput = pageCaregiver.getByPlaceholder('Ví dụ: 8B29JG');
+      await codeInput.fill(actualPairingCode);
 
-    // -----------------------------------------------------------------
-    // BƯỚC E: KIỂM CHỨNG GHÉP NỐI THÀNH CÔNG TRÊN CẢ 2 MÀN HÌNH
-    // -----------------------------------------------------------------
-    // 1. Màn hình Con cháu: Modal phải tự đóng, dòng "Chưa kết nối người thân" biến mất
-    await expect(pageCaregiver.getByText('Chưa kết nối người thân')).not.toBeVisible({ timeout: 10000 });
+      const submitBtn = pageCaregiver.getByRole('button', { name: 'Xác nhận' });
+      await submitBtn.click();
 
-    // 2. Màn hình Con cháu: Xuất hiện thông tin người thân "Đang theo dõi:"
-    await expect(pageCaregiver.getByText('Đang theo dõi:')).toBeVisible();
+      // -----------------------------------------------------------------
+      // BƯỚC E: KIỂM CHỨNG GHÉP NỐI THÀNH CÔNG TRÊN CẢ 2 MÀN HÌNH
+      // -----------------------------------------------------------------
+      // 1. Màn hình Con cháu: Modal phải tự đóng, dòng "Chưa kết nối người thân" biến mất
+      await expect(pageCaregiver.getByText('Chưa kết nối người thân')).not.toBeVisible({ timeout: 10000 });
 
-    // 3. Màn hình Cụ (Cửa sổ 1): Tự động đổi trạng thái sang "Đã kết nối người thân"
-    await expect(pageElderly.getByText('Đã kết nối người thân')).toBeVisible({ timeout: 10000 });
+      // 2. Màn hình Con cháu: Xuất hiện thông tin người thân "Đang theo dõi:"
+      await expect(pageCaregiver.getByText('Đang theo dõi:')).toBeVisible();
 
-    // Đóng 2 cửa sổ dọn dẹp bộ nhớ
-    await contextElderly.close();
-    await contextCaregiver.close();
+      // 3. Màn hình Cụ (Cửa sổ 1): Tự động đổi trạng thái sang "Đã kết nối người thân"
+      await expect(pageElderly.getByText('Đã kết nối người thân')).toBeVisible({ timeout: 10000 });
+    } finally {
+      // Dọn dẹp đóng cửa sổ và TỰ ĐỘNG GỠ LIÊN KẾT của test02 ngay sau đó để test02 luôn luôn là tài khoản chưa liên kết
+      await contextElderly.close();
+      await contextCaregiver.close();
+      await unlinkCaregiver('test02@gmail.com', 'test02@gmail.com');
+      console.log('[Test TC04] Đã tự động gỡ liên kết của test02@gmail.com sau test.');
+    }
   });
 
   // ===================================================================
@@ -311,10 +323,11 @@ test.describe('Module 03: Màn hình Con cháu & Đồng bộ Realtime (Caregive
 
   // ===================================================================
   // TEST CASE 6: Mô hình 1 Cụ : N Con cháu (1:N) - Đồng bộ Realtime cùng lúc trên 3 cửa sổ
+  // Sử dụng: test01@gmail.com (Tester) và test03@gmail.com (Con cháu bình thường, liên kết cố định với Cụ)
   // ===================================================================
   test('TC06: Mô hình 1 Cụ : N Con cháu (1:N) - Cụ điểm danh, cả 2 Con cháu cùng đổi màu Realtime', async ({ browser }) => {
     // -----------------------------------------------------------------
-    // BƯỚC 1: KHỞI TẠO 3 CỬA SỔ ĐỘC LẬP (1 CỤ + 2 CON CHÁU KHÁC NHAU)
+    // BƯỚC 1: KHỞI TẠO 3 CỬA SỔ ĐỘC LẬP (1 CỤ + 2 CON CHÁU ĐÃ LIÊN KẾT)
     // -----------------------------------------------------------------
     // Context 1: Máy của Cụ (0123456789)
     const contextElderly = await browser.newContext();
@@ -334,28 +347,20 @@ test.describe('Module 03: Màn hình Con cháu & Đồng bộ Realtime (Caregive
     await pageCaregiver1.getByRole('button', { name: 'ĐĂNG NHẬP', exact: true }).click();
     await expect(pageCaregiver1.getByRole('button', { name: 'Đăng xuất' })).toBeVisible({ timeout: 10000 });
 
-    // Context 3: Con cháu 2 (test02@gmail.com - Người dùng thông thường)
+    // Context 3: Con cháu 2 (test03@gmail.com - Người dùng thông thường đã liên kết với Cụ)
     const contextCaregiver2 = await browser.newContext();
     const pageCaregiver2 = await contextCaregiver2.newPage();
     await pageCaregiver2.goto('/');
-    await pageCaregiver2.getByPlaceholder('0901234567 hoặc conchau@gmail.com').fill('test02@gmail.com');
-    await pageCaregiver2.getByPlaceholder('Tối thiểu 6 ký tự').fill('test02@gmail.com');
+    await pageCaregiver2.getByPlaceholder('0901234567 hoặc conchau@gmail.com').fill('test03@gmail.com');
+    await pageCaregiver2.getByPlaceholder('Tối thiểu 6 ký tự').fill('Test03@gmail.com');
     await pageCaregiver2.getByRole('button', { name: 'ĐĂNG NHẬP', exact: true }).click();
     await expect(pageCaregiver2.getByRole('button', { name: 'Đăng xuất' })).toBeVisible({ timeout: 10000 });
 
     // -----------------------------------------------------------------
     // BƯỚC 2: XÁC LẬP PRECONDITION - CẢ 2 CON CHÁU ĐỀU ĐÃ KẾT NỐI VỚI CỤ
     // -----------------------------------------------------------------
-    // Nếu Con cháu 2 chưa kết nối, tiến hành kết nối nhanh bằng mã ghép của Cụ
-    const connectBtn = pageCaregiver2.getByRole('button', { name: '+ KẾT NỐI VỚI CỤ NGAY' });
-    if (await connectBtn.isVisible()) {
-      const pairingCodeLocator = pageElderly.getByTestId('elderly-pairing-code');
-      const pairingCode = (await pairingCodeLocator.innerText()).trim();
-      await connectBtn.click();
-      await pageCaregiver2.getByPlaceholder('Ví dụ: 8B29JG').fill(pairingCode);
-      await pageCaregiver2.getByRole('button', { name: 'Xác nhận' }).click();
-      await expect(pageCaregiver2.getByText('Đang theo dõi:')).toBeVisible({ timeout: 10000 });
-    }
+    await expect(pageCaregiver1.getByText('Đang theo dõi:')).toBeVisible({ timeout: 10000 });
+    await expect(pageCaregiver2.getByText('Đang theo dõi:')).toBeVisible({ timeout: 10000 });
 
     // -----------------------------------------------------------------
     // BƯỚC 3: ĐƯA HỆ THỐNG VỀ TRẠNG THÁI CHỜ (WAITING) BẰNG DEV TOOL CỦA CON 1

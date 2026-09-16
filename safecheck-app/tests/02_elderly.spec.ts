@@ -1,9 +1,42 @@
 import { test, expect } from '@playwright/test';
+import { createClient } from '@supabase/supabase-js';
+
+const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://bozuzbmgnzzxyrioxzaa.supabase.co';
+const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_ZQjFvvLTLywvw4rKJIPU9Q_5iR_78Rr';
 
 test.describe('Module 02: Nghiệp vụ Màn hình Người cao tuổi (Elderly Screen)', () => {
+  test.describe.configure({ mode: 'serial' });
 
-  // Trước mỗi testcase: Robot đăng nhập vào tài khoản Cụ mẫu 0123456789
+  // Trước mỗi testcase: Tự động reset trạng thái Cụ về trạng thái sạch (Waiting, không có SOS)
   test.beforeEach(async ({ page }) => {
+    // 0. Reset trạng thái Database của Cụ để bài test độc lập và ổn định 100%
+    const clientElderly = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const { data: auth } = await clientElderly.auth.signInWithPassword({
+      email: '0123456789@safecheck.local',
+      password: '123456',
+    });
+    if (auth?.user) {
+      // Đóng bất kỳ sự kiện SOS active nào còn sót lại
+      await clientElderly
+        .from('sos_events')
+        .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+        .eq('elderly_id', auth.user.id)
+        .eq('status', 'active');
+    }
+
+    // Đưa trạng thái hôm nay về Waiting bằng tài khoản tester (được phép update theo RLS)
+    const clientTester = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    await clientTester.auth.signInWithPassword({
+      email: 'test01@gmail.com',
+      password: 'test01@gmail.com',
+    });
+    const today = new Date().toISOString().split('T')[0];
+    await clientTester
+      .from('checkin_logs')
+      .update({ status: 'Waiting', checkin_time: null })
+      .eq('family_code', '3UGSN6')
+      .eq('log_date', today);
+
     // 1. Truy cập trang chủ
     await page.goto('/');
 
@@ -39,17 +72,14 @@ test.describe('Module 02: Nghiệp vụ Màn hình Người cao tuổi (Elderly 
   // TEST CASE 2: Cụ bấm nút "Tôi ổn" -> Màn hình chuyển sang xác nhận "Hôm nay đã ổn"
   // ===================================================================
   test('TC02: Cụ bấm nút điểm danh -> Hiển thị thẻ xác nhận Hôm nay đã ổn', async ({ page }) => {
-    // 1. Kiểm tra nút điểm danh (chỉ có khi hôm nay Cụ chưa bấm)
+    // 1. Kiểm tra nút điểm danh (chắc chắn xuất hiện vì trạng thái ban đầu đã được reset về Waiting)
     const checkinBtn = page.getByTestId('checkin-button');
-    
-    // Nếu hôm nay Cụ chưa điểm danh thì bấm
-    if (await checkinBtn.isVisible()) {
-      await checkinBtn.click();
-    }
+    await expect(checkinBtn).toBeVisible({ timeout: 10000 });
+    await checkinBtn.click();
 
     // 2. Kiểm chứng: Thẻ xanh "HÔM NAY ĐÃ ỔN" phải xuất hiện
     const safeCard = page.getByTestId('status-safe-card');
-    await expect(safeCard).toBeVisible();
+    await expect(safeCard).toBeVisible({ timeout: 10000 });
     await expect(safeCard).toContainText('HÔM NAY ĐÃ ỔN');
     await expect(safeCard).toContainText('Đã điểm danh lúc:');
   });

@@ -34,3 +34,62 @@ export interface EmergencyContact {
   updated_at?: string;
 }
 
+export interface AlarmLog {
+  id: string;
+  elderly_id: string;
+  sos_event_id?: string | null;
+  action: 'SOS_TRIGGERED' | 'RESOLVE' | 'PING' | 'CHECKIN_SAFE';
+  performed_by: string;
+  performer_name: string;
+  performer_role: string;
+  note?: string | null;
+  previous_state?: string | null;
+  new_state?: string | null;
+  created_at: string;
+}
+
+export interface OfflineSOSEvent {
+  client_event_id: string;
+  elderly_id: string;
+  trigger_source: 'button' | 'timeout';
+  created_at: number;
+  // Auth credential lưu kèm để Service Worker có thể thực thi ngầm
+  access_token?: string;
+  // Database sync phase
+  db_status: 'PENDING' | 'SYNCING' | 'SERVER_ACKED' | 'FAILED_PERMANENTLY';
+  server_ack_at?: number;
+  sos_event_id?: string;
+  // Push dispatch phase
+  push_status: 'NOT_REQUESTED' | 'DISPATCH_PENDING' | 'DISPATCHED' | 'FAILED';
+  push_attempt_count: number;
+  last_attempt_at?: number;
+  error_message?: string;
+}
+
+export interface ResolveAlarmResult {
+  success: boolean;
+  message: string;
+  error?: string;
+  sos_event_id?: string;
+  resolved_by?: string;
+  resolved_by_name?: string;
+  resolved_at?: string;
+}
+
+export interface RequestPingResult {
+  success: boolean;
+  message: string;
+  error?: string;
+  last_pinger_name?: string;
+  remaining_seconds?: number;
+}
+
+export interface CreateSosEventResult {
+  success: boolean;
+  sos_event_id?: string;
+  status?: string;
+  is_duplicate?: boolean;
+  message?: string;
+  error?: string;
+}
+

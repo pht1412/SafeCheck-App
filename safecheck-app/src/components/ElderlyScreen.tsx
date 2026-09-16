@@ -1,4 +1,5 @@
 import type { SystemState } from '../types';
+import CellularFallbackCard from './CellularFallbackCard';
 
 interface ElderlyScreenProps {
   systemState: SystemState;
@@ -10,6 +11,9 @@ interface ElderlyScreenProps {
   elderlyName?: string;
   pairingCode?: string | null;
   hasLinkedCaregivers?: boolean;
+  showCellularFallback?: boolean;
+  primaryCaregiverName?: string;
+  primaryCaregiverPhone?: string;
   onCheckIn: () => void;
   onStartSosHold: () => void;
   onCancelSosHold: () => void;
@@ -27,6 +31,9 @@ export default function ElderlyScreen({
   elderlyName,
   pairingCode,
   hasLinkedCaregivers = false,
+  showCellularFallback = false,
+  primaryCaregiverName,
+  primaryCaregiverPhone,
   onCheckIn,
   onStartSosHold,
   onCancelSosHold,
@@ -115,7 +122,13 @@ export default function ElderlyScreen({
               data-testid="elderly-emergency-view"
               className="w-full flex flex-col items-center gap-3 animate-in fade-in"
             >
-              {hasLinkedCaregivers ? (
+              {showCellularFallback ? (
+                <CellularFallbackCard
+                  primaryCaregiverName={primaryCaregiverName}
+                  primaryCaregiverPhone={primaryCaregiverPhone}
+                  onResolveAlarm={onResolveAlarm}
+                />
+              ) : hasLinkedCaregivers ? (
                 /* TH1: Đã có con cháu liên kết */
                 <div className="w-full bg-rose-950/90 border-4 border-rose-600 rounded-3xl p-5 text-center shadow-2xl">
                   <div className="text-5xl mb-2 animate-bounce">🚨</div>

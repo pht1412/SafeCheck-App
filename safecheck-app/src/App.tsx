@@ -4,6 +4,7 @@ import type { SystemState, UserProfile } from './types';
 import { SirenPlayer, playChimeSound } from './utils/sirenPlayer';
 import { authService } from './services/authService';
 import { pushNotificationService } from './services/pushNotificationService';
+import { offlineQueueService } from './services/offlineQueueService';
 import ElderlyScreen from './components/ElderlyScreen';
 import CaregiverScreen from './components/CaregiverScreen';
 import AuthScreen from './components/AuthScreen';
@@ -36,6 +37,14 @@ export default function App() {
   const [sosHolding, setSosHolding] = useState<boolean>(false);
   const [sosCountdown, setSosCountdown] = useState<number | null>(null);
   const [isSirenMuted, setIsSirenMuted] = useState<boolean>(false);
+
+  // States quản lý Concurrency & Offline Resilience
+  const [activeSosEventId, setActiveSosEventId] = useState<string | null>(null);
+  const [conflictToast, setConflictToast] = useState<string | null>(null);
+  const [sosStartTime, setSosStartTime] = useState<number | null>(null);
+  const [hasServerAck, setHasServerAck] = useState<boolean>(false);
+  const [now, setNow] = useState<number>(Date.now());
+  const [primaryCaregiver, setPrimaryCaregiver] = useState<{ name: string; phone: string } | null>(null);
 
   const sosHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sosCountdownIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -138,14 +147,21 @@ export default function App() {
   // 2b. Nếu là Cụ (elderly): Kiểm tra xem đã có người thân nào liên kết chưa
   const fetchElderlyCaregivers = async (elderlyId: string) => {
     try {
-      const { count, error } = await supabase
+      const { data, count, error } = await supabase
         .from('family_links')
-        .select('*', { count: 'exact', head: true })
+        .select('caregiver_id, profiles!caregiver_id(full_name, phone)', { count: 'exact' })
         .eq('elderly_id', elderlyId)
         .eq('status', 'accepted');
 
       if (!error && count !== null) {
         setHasLinkedCaregivers(count > 0);
+        if (data && data.length > 0 && data[0].profiles) {
+          const prof = data[0].profiles as any;
+          setPrimaryCaregiver({
+            name: prof.full_name || 'Con cháu',
+            phone: prof.phone || '0901234567',
+          });
+        }
       }
     } catch (err) {
       console.error('Lỗi kiểm tra người thân liên kết:', err);
@@ -233,6 +249,14 @@ export default function App() {
 
     fetchStatus();
 
+    // Tự động kiểm tra lại trạng thái khi mạng phục hồi hoặc người dùng mở lại tab/mở khóa máy
+    const handleRevalidate = () => {
+      fetchStatus();
+    };
+    window.addEventListener('online', handleRevalidate);
+    window.addEventListener('visibilitychange', handleRevalidate);
+    window.addEventListener('focus', handleRevalidate);
+
     // Lắng nghe Realtime chỉ riêng cho Cụ này
     const channel = supabase
       .channel(`room-${activeFamilyCode}`)
@@ -270,6 +294,9 @@ export default function App() {
 
     return () => {
       supabase.removeChannel(channel);
+      window.removeEventListener('online', handleRevalidate);
+      window.removeEventListener('visibilitychange', handleRevalidate);
+      window.removeEventListener('focus', handleRevalidate);
     };
   }, [activeFamilyCode]);
 
@@ -317,6 +344,69 @@ export default function App() {
     }
   }, [systemState, userProfile]);
 
+  // Tự động tìm sos_event_id khi hệ thống ở trạng thái Emergency
+  useEffect(() => {
+    const targetElderlyId = userProfile?.role === 'caregiver' ? linkedElderly?.id : userProfile?.id;
+    if (systemState === 'Emergency' && targetElderlyId) {
+      supabase
+        .from('sos_events')
+        .select('id, created_at')
+        .eq('elderly_id', targetElderlyId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setActiveSosEventId(data.id);
+            if (!sosStartTime) {
+              setSosStartTime(new Date(data.created_at).getTime());
+            }
+          }
+        });
+    } else if (systemState !== 'Emergency') {
+      setActiveSosEventId(null);
+      setSosStartTime(null);
+      setHasServerAck(false);
+    }
+  }, [systemState, linkedElderly, userProfile]);
+
+  // Lắng nghe sự kiện Online để tự động gửi bù tín hiệu SOS từ IndexedDB
+  useEffect(() => {
+    const handleOnline = async () => {
+      console.log('[SafeCheck] Mạng Internet phục hồi -> Kích hoạt flushOfflineQueue()');
+      const res = await offlineQueueService.flushOfflineQueue();
+      if (res.succeeded > 0 && systemState === 'Emergency') {
+        setHasServerAck(true);
+      }
+    };
+
+    window.addEventListener('online', handleOnline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [systemState]);
+
+  // Cập nhật 'now' để reevaluate trạng thái Cellular Fallback sau 10s
+  useEffect(() => {
+    if (systemState !== 'Emergency' || hasServerAck) return;
+    const interval = setInterval(() => {
+      setNow(Date.now());
+    }, 1000);
+    const handleVis = () => setNow(Date.now());
+    window.addEventListener('visibilitychange', handleVis);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('visibilitychange', handleVis);
+    };
+  }, [systemState, hasServerAck]);
+
+  const showCellularFallback =
+    systemState === 'Emergency' &&
+    !hasServerAck &&
+    sosStartTime !== null &&
+    now - sosStartTime >= 10000;
+
   // Bộ đếm 10 giây chống bấm nhầm SOS
   useEffect(() => {
     if (sosCountdown !== null && sosCountdown > 0) {
@@ -328,39 +418,29 @@ export default function App() {
       setSystemState('Emergency');
       setSosCountdown(null);
       setIsSirenMuted(false);
+      setSosStartTime(Date.now());
+      setHasServerAck(false);
       triggerSensoryFeedback('Báo động khẩn cấp đã được gửi tới người thân');
 
-      // 1. Tạo sự kiện vào bảng sos_events (Source of Truth) & Kích hoạt Web Push ngoại tuyến
+      // 1. Tạo sự kiện SOS Idempotent & Lưu vào IndexedDB dự phòng ngoại tuyến
       if (userProfile?.id && userProfile.role === 'elderly') {
         const elderlyId = userProfile.id;
-        supabase
-          .rpc('create_sos_event', { p_elderly_id: elderlyId })
-          .then(({ data: rpcRes, error: rpcErr }) => {
-            const sosId = rpcRes?.sos_event_id;
-            if (sosId) {
-              console.log('[SafeCheck] Đã tạo sự kiện sos_events qua RPC:', sosId);
-              pushNotificationService.sendEmergencyPush(sosId);
-            } else {
-              if (rpcErr) console.warn('[SafeCheck] RPC create_sos_event lỗi, thử insert trực tiếp:', rpcErr);
-              supabase
-                .from('sos_events')
-                .insert({
-                  elderly_id: elderlyId,
-                  status: 'active',
-                  trigger_source: 'button',
-                })
-                .select()
-                .single()
-                .then(({ data: newEvent, error: insertErr }) => {
-                  if (newEvent && !insertErr) {
-                    console.log('[SafeCheck] Đã tạo sự kiện sos_events:', newEvent.id);
-                    pushNotificationService.sendEmergencyPush(newEvent.id);
-                  } else if (insertErr) {
-                    console.error('[SafeCheck] Lỗi tạo sos_events:', insertErr);
-                  }
-                });
+
+        supabase.auth.getSession().then(async ({ data: sessionData }) => {
+          const token = sessionData?.session?.access_token;
+          await offlineQueueService.enqueueOfflineSOS(elderlyId, 'button', token);
+
+          if (!navigator.onLine) {
+            console.log('[SafeCheck] Đang ngoại tuyến: Đã lưu SOS vào IndexedDB, đăng ký Background Sync');
+            await offlineQueueService.registerBackgroundSync();
+          } else {
+            console.log('[SafeCheck] Đang trực tuyến: Tiến hành đồng bộ ngay lập tức');
+            const syncRes = await offlineQueueService.flushOfflineQueue();
+            if (syncRes.succeeded > 0) {
+              setHasServerAck(true);
             }
-          });
+          }
+        });
       }
 
       // 2. Kích hoạt Realtime cập nhật trạng thái phòng
@@ -428,54 +508,95 @@ export default function App() {
     triggerSensoryFeedback('Đã hủy báo động');
   };
 
-  // Flow 4: Con cháu gửi Ping
+  // Flow 4: Con cháu gửi Ping (Atomic Row Lock)
   const isPingAllowed = ['Waiting', 'Late', 'Safe'].includes(systemState);
 
   const handleSendPing = async () => {
-    if (!isPingAllowed || pingCooldown > 0 || !activeFamilyCode) return;
+    const targetElderlyId = linkedElderly?.id;
+    if (!isPingAllowed || pingCooldown > 0 || !targetElderlyId) return;
 
-    const { data, error } = await supabase.rpc('request_ping', {
-      p_family_code: activeFamilyCode,
+    const { data, error } = await supabase.rpc('request_ping_atomic', {
+      p_elderly_id: targetElderlyId,
     });
 
-    if (error || !data?.success) {
-      console.error('[SafeCheck] Lỗi request_ping:', { error, data });
-      alert(error?.message || data?.message || 'Không thể gửi chuông');
+    if (error) {
+      console.error('[SafeCheck] Lỗi request_ping_atomic:', error);
+      alert(error.message || 'Không thể gửi chuông');
       return;
     }
+
+    if (data?.error === 'CONFLICT_PING_ALREADY_SENT') {
+      console.log('[SafeCheck] Xung đột Ping:', data);
+      setConflictToast(data.message || 'Chuông vừa được gửi bởi thành viên khác.');
+      if (data.remaining_seconds) {
+        setPingCooldown(data.remaining_seconds);
+      }
+      setTimeout(() => setConflictToast(null), 8000);
+      return;
+    }
+
+    if (!data?.success) {
+      alert(data?.message || 'Không thể gửi chuông');
+      return;
+    }
+
     const isTester = userProfile?.email?.toLowerCase() === 'test01@gmail.com';
     setPingCooldown(isTester ? 10 : 15 * 60);
+    triggerSensoryFeedback('Đã phát chuông kiểm tra tới máy Cụ');
   };
 
-  // Flow 5: Giải quyết / Tắt báo động
+  // Flow 5: Giải quyết / Tắt báo động (Atomic Resolve)
   const handleResolveAlarm = async () => {
-    if (!activeFamilyCode) return;
-    setSystemState('Safe');
-    setIsSirenMuted(false);
-    triggerSensoryFeedback('Đã tắt báo động, xác nhận an toàn');
-    const { error } = await supabase.rpc('resolve_alarm', { p_family_code: activeFamilyCode });
-    if (error) {
-      console.error('[SafeCheck] Lỗi resolve_alarm:', error);
+    const targetElderlyId = userProfile?.role === 'caregiver' ? linkedElderly?.id : userProfile?.id;
+    if (!targetElderlyId) return;
+
+    let sosIdToResolve = activeSosEventId;
+    if (!sosIdToResolve) {
+      const { data: latestEvent } = await supabase
+        .from('sos_events')
+        .select('id')
+        .eq('elderly_id', targetElderlyId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      sosIdToResolve = latestEvent?.id || null;
     }
 
-    // Cập nhật trạng thái sự kiện sos_events sang 'resolved'
-    if (userProfile?.id) {
-      const targetElderlyId = userProfile.role === 'caregiver' ? linkedElderly?.id : userProfile.id;
-      if (targetElderlyId) {
-        supabase
-          .from('sos_events')
-          .update({
-            status: 'resolved',
-            resolved_at: new Date().toISOString(),
-            resolved_by: userProfile.id,
-          })
-          .eq('elderly_id', targetElderlyId)
-          .eq('status', 'active')
-          .then(({ error: sosErr }) => {
-            if (sosErr) console.error('[SafeCheck] Lỗi cập nhật sos_events resolved:', sosErr);
-          });
-      }
+    if (!sosIdToResolve) {
+      console.warn('[SafeCheck] Không có active sos_event_id để resolve');
+      setSystemState('Safe');
+      setIsSirenMuted(false);
+      return;
     }
+
+    const { data, error } = await supabase.rpc('resolve_alarm_atomic', {
+      p_elderly_id: targetElderlyId,
+      p_sos_event_id: sosIdToResolve,
+      p_note: userProfile?.role === 'caregiver' ? 'Xác nhận an toàn từ Con cháu' : 'Cụ xác nhận an toàn tại chỗ',
+    });
+
+    if (error) {
+      console.error('[SafeCheck] Lỗi resolve_alarm_atomic:', error);
+      setSystemState('Safe');
+      setIsSirenMuted(false);
+      return;
+    }
+
+    if (data?.error === 'CONFLICT_ALREADY_RESOLVED') {
+      console.log('[SafeCheck] Xung đột: Báo động đã được giải quyết:', data);
+      setConflictToast(data.message || 'Báo động này đã được xử lý bởi thành viên khác.');
+      setSystemState('Safe');
+      setIsSirenMuted(false);
+      setActiveSosEventId(null);
+      setTimeout(() => setConflictToast(null), 8000);
+      return;
+    }
+
+    // Resolve thành công
+    setSystemState('Safe');
+    setIsSirenMuted(false);
+    setActiveSosEventId(null);
+    triggerSensoryFeedback('Đã tắt báo động, xác nhận an toàn');
   };
 
   // Dev Tool: Cập nhật trực tiếp trạng thái hôm nay
@@ -491,36 +612,28 @@ export default function App() {
     if (status === 'Emergency') {
       const targetElderlyId = userProfile?.role === 'elderly' ? userProfile.id : linkedElderly?.id;
       if (targetElderlyId) {
-        // Ưu tiên gọi RPC create_sos_event (SECURITY DEFINER)
-        const { data: rpcRes, error: rpcErr } = await supabase.rpc('create_sos_event', {
+        setSosStartTime(Date.now());
+        setHasServerAck(false);
+        const clientEventId = crypto.randomUUID();
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('create_sos_event_idempotent', {
           p_elderly_id: targetElderlyId,
+          p_client_event_id: clientEventId,
+          p_trigger_source: 'button',
         });
 
-        let sosEventId = rpcRes?.sos_event_id;
-
-        if (!sosEventId) {
-          if (rpcErr) console.warn('[SafeCheck DevTool] RPC create_sos_event không thành công, thử insert trực tiếp:', rpcErr);
-          const { data: newEvent, error: insertErr } = await supabase
-            .from('sos_events')
-            .insert({
-              elderly_id: targetElderlyId,
-              status: 'active',
-              trigger_source: 'button',
-            })
-            .select()
-            .maybeSingle();
-
-          if (insertErr) console.error('[SafeCheck DevTool] Lỗi insert sos_events:', insertErr);
-          sosEventId = newEvent?.id;
-        }
-
-        if (sosEventId) {
-          console.log('[SafeCheck DevTool] Phát lệnh Web Push từ Dev Tool cho sự kiện:', sosEventId);
-          await pushNotificationService.sendEmergencyPush(sosEventId);
+        const sosId = rpcRes?.sos_event_id;
+        if (sosId) {
+          setActiveSosEventId(sosId);
+          setHasServerAck(true);
+          await pushNotificationService.sendEmergencyPush(sosId);
+        } else if (rpcErr) {
+          console.warn('[SafeCheck DevTool] Lỗi create_sos_event_idempotent:', rpcErr);
         }
       }
-    } else if (status === 'Safe') {
-      handleResolveAlarm();
+    } else {
+      setActiveSosEventId(null);
+      setSosStartTime(null);
+      setHasServerAck(false);
     }
   };
 
@@ -597,6 +710,9 @@ export default function App() {
           elderlyName={userProfile.full_name}
           pairingCode={userProfile.pairing_code}
           hasLinkedCaregivers={hasLinkedCaregivers}
+          showCellularFallback={showCellularFallback}
+          primaryCaregiverName={primaryCaregiver?.name}
+          primaryCaregiverPhone={primaryCaregiver?.phone}
           onCheckIn={handleCheckIn}
           onStartSosHold={startSosHold}
           onCancelSosHold={cancelSosHold}
@@ -619,6 +735,7 @@ export default function App() {
           caregiverName={userProfile.full_name}
           linkedElderly={linkedElderly}
           isTester={userProfile.email?.toLowerCase() === 'test01@gmail.com'}
+          conflictToast={conflictToast}
           onSendPing={handleSendPing}
           onResolveAlarm={handleResolveAlarm}
           onToggleMuteSiren={() => setIsSirenMuted(!isSirenMuted)}

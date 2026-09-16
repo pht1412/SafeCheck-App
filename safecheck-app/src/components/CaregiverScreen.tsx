@@ -25,6 +25,7 @@ interface CaregiverScreenProps {
   caregiverName?: string;
   linkedElderly?: LinkedElderly | null;
   isTester?: boolean;
+  conflictToast?: string | null;
   onSendPing: () => void;
   onResolveAlarm: () => void;
   onToggleMuteSiren: () => void;
@@ -45,6 +46,7 @@ export default function CaregiverScreen({
   caregiverName,
   linkedElderly,
   isTester = false,
+  conflictToast,
   onSendPing,
   onResolveAlarm,
   onToggleMuteSiren,
@@ -447,6 +449,15 @@ export default function CaregiverScreen({
         {/* Nút hành động ở đáy (chỉ hiện khi đã kết nối) */}
         {linkedElderly && (
           <div className="space-y-3 pt-4 shrink-0">
+            {conflictToast && (
+              <div
+                data-testid="conflict-toast"
+                className="bg-sky-950/90 border border-sky-500/60 text-sky-200 text-xs px-3.5 py-2.5 rounded-xl flex items-center gap-2 animate-in fade-in shadow-lg"
+              >
+                <span className="text-base">ℹ️</span>
+                <span className="font-medium">{conflictToast}</span>
+              </div>
+            )}
             <button
               data-testid="send-ping-button"
               onClick={onSendPing}
