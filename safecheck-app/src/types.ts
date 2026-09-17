@@ -1,4 +1,5 @@
 export type SystemState =
+  | 'Early_Waiting'
   | 'Waiting'
   | 'Safe'
   | 'Late'
@@ -91,5 +92,35 @@ export interface CreateSosEventResult {
   is_duplicate?: boolean;
   message?: string;
   error?: string;
+}
+
+export interface CheckinSchedule {
+  elderly_id: string;
+  checkin_start: string; // 'HH:mm:ss'
+  checkin_deadline: string; // 'HH:mm:ss'
+  emergency_buffer_minutes: number;
+  timezone: string;
+  is_active: boolean;
+  updated_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface UpdateScheduleResult {
+  success: boolean;
+  message: string;
+  error?: string;
+  schedule?: {
+    checkin_start: string;
+    checkin_deadline: string;
+    emergency_buffer_minutes: number;
+  };
+}
+
+export interface PerformCheckinResult {
+  success: boolean;
+  message: string;
+  error?: string;
+  checkin_time?: string;
 }
 

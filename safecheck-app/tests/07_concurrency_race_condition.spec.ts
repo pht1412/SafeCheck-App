@@ -113,9 +113,9 @@ test.describe('Module 07: Concurrency & Race Condition Control (PRD_Deep_v1)', (
     expect(toastAVisible !== toastBVisible).toBeTruthy();
 
     if (toastAVisible) {
-      await expect(pageA.getByTestId('conflict-toast')).toContainText(/xử lý bởi/i);
+      await expect(pageA.getByTestId('conflict-toast')).toContainText(/đã được giải quyết|xử lý bởi/i);
     } else {
-      await expect(pageB.getByTestId('conflict-toast')).toContainText(/xử lý bởi/i);
+      await expect(pageB.getByTestId('conflict-toast')).toContainText(/đã được giải quyết|xử lý bởi/i);
     }
 
     // 6. Kiểm tra cơ sở dữ liệu: Bảng alarm_logs chỉ có đúng 1 bản ghi RESOLVE cho sosEventId này

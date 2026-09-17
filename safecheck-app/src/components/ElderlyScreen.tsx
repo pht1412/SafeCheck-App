@@ -4,6 +4,7 @@ import CellularFallbackCard from './CellularFallbackCard';
 interface ElderlyScreenProps {
   systemState: SystemState;
   checkInTime: string | null;
+  checkinStart?: string | null;
   batteryLevel: number | null;
   isCharging?: boolean;
   sosHolding: boolean;
@@ -24,6 +25,7 @@ interface ElderlyScreenProps {
 export default function ElderlyScreen({
   systemState,
   checkInTime,
+  checkinStart,
   batteryLevel,
   isCharging = false,
   sosHolding,
@@ -218,8 +220,60 @@ export default function ElderlyScreen({
                 </span>
               </button>
             </div>
+          ) : systemState === 'Early_Waiting' ? (
+            /* Trạng thái Early_Waiting: Chưa đến giờ điểm danh */
+            <div className="w-full flex flex-col items-center gap-4 text-center">
+              <div
+                data-testid="early-waiting-alert"
+                className="w-full bg-slate-900 border-2 border-slate-700/80 p-4 rounded-3xl shadow-lg"
+              >
+                <span className="text-4xl block mb-2">⏰</span>
+                <p className="text-slate-200 text-lg font-bold mb-1">
+                  Chưa đến giờ điểm danh
+                </p>
+                <p className="text-slate-400 text-xs">
+                  Cụ có thể điểm danh từ{' '}
+                  <strong className="text-emerald-400 font-bold">
+                    {checkinStart ? checkinStart.slice(0, 5) : '07:00'}
+                  </strong>{' '}
+                  nhé Cụ!
+                </p>
+              </div>
+              <button
+                data-testid="checkin-button"
+                disabled
+                className="w-full h-44 bg-slate-800/80 text-slate-500 text-2xl font-black rounded-3xl border-4 border-slate-700/60 cursor-not-allowed flex flex-col items-center justify-center gap-2 opacity-60"
+              >
+                <span>CHƯA ĐẾN GIỜ</span>
+                <span className="text-xs font-normal">(Nút sẽ tự mở khi đến giờ)</span>
+              </button>
+            </div>
+          ) : systemState === 'Late' ? (
+            /* Trạng thái Late: Quá hạn chót nhưng cụ vẫn bấm được để báo bình an */
+            <div className="w-full flex flex-col items-center gap-3 text-center">
+              <div
+                data-testid="late-warning-alert"
+                className="w-full bg-amber-950/60 border border-amber-500/40 p-3 rounded-2xl"
+              >
+                <p className="text-amber-300 font-bold text-xs">
+                  ⚠️ Cụ đang điểm danh hơi muộn một chút
+                </p>
+                <p className="text-slate-300 text-[11px] mt-0.5">
+                  Cụ chạm nút ngay để con cháu an tâm nhé!
+                </p>
+              </div>
+              <button
+                data-testid="checkin-button"
+                onClick={onCheckIn}
+                className="w-full h-44 bg-amber-600 hover:bg-amber-500 active:scale-95 text-white text-3xl font-black rounded-3xl shadow-xl border-4 border-amber-400 transition-all flex flex-col items-center justify-center gap-2 ring-2 ring-amber-500/40"
+              >
+                <span>HÔM NAY</span>
+                <span>TÔI ỔN</span>
+                <span className="text-xs font-normal opacity-90">(Chạm 1 lần để báo an tâm)</span>
+              </button>
+            </div>
           ) : (
-            /* Trạng thái Waiting / Late */
+            /* Trạng thái Waiting chuẩn */
             <button
               data-testid="checkin-button"
               onClick={onCheckIn}

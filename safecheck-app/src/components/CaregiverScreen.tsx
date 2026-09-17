@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
-import type { SystemState, EmergencyContact } from '../types';
+import type { SystemState, EmergencyContact, CheckinSchedule } from '../types';
 import type { ConnectionHealth } from '../hooks/useDeviceStatus';
 import { EmergencyContactsModal } from './EmergencyContactsModal';
 import { EmergencyContactsSettings } from './EmergencyContactsSettings';
+import { ScheduleSettingsModal } from './ScheduleSettingsModal';
 import { emergencyContactsService } from '../services/emergencyContactsService';
 import { pushNotificationService } from '../services/pushNotificationService';
+import { checkinScheduleService, formatTimeDisplay } from '../services/checkinScheduleService';
+import { supabase } from '../supabaseClient';
 
 interface LinkedElderly {
   id: string;
@@ -72,6 +75,49 @@ export default function CaregiverScreen({
   const [isPushSupported, setIsPushSupported] = useState<boolean>(false);
   const [isSubscribingPush, setIsSubscribingPush] = useState<boolean>(false);
   const [pushStatusMessage, setPushStatusMessage] = useState<string | null>(null);
+
+  // State quản lý lịch điểm danh
+  const [isScheduleModalOpen, setIsScheduleModalOpen] = useState(false);
+  const [currentSchedule, setCurrentSchedule] = useState<CheckinSchedule | null>(null);
+
+  const loadSchedule = async () => {
+    if (!linkedElderly?.id) {
+      setCurrentSchedule(null);
+      return;
+    }
+    const { data } = await checkinScheduleService.getSchedule(linkedElderly.id);
+    if (data) {
+      setCurrentSchedule(data);
+    }
+  };
+
+  useEffect(() => {
+    loadSchedule();
+    if (!linkedElderly?.id) return;
+
+    // Lắng nghe Realtime cập nhật cấu hình lịch của Cụ
+    const channel = supabase
+      .channel(`caregiver_schedule_${linkedElderly.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'checkin_schedules',
+          filter: `elderly_id=eq.${linkedElderly.id}`,
+        },
+        (payload) => {
+          if (payload.new) {
+            setCurrentSchedule(payload.new as CheckinSchedule);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [linkedElderly?.id]);
 
   useEffect(() => {
     setIsPushSupported(pushNotificationService.isPushSupported());
@@ -413,6 +459,51 @@ export default function CaregiverScreen({
                 </div>
               </div>
 
+              {/* Thẻ Khung giờ điểm danh hiện tại */}
+              <div
+                data-testid="schedule-status-card"
+                className="bg-slate-900/90 rounded-2xl p-3.5 mb-4 border border-slate-800 shadow-md"
+              >
+                <div className="flex justify-between items-center mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">⏰</span>
+                    <div>
+                      <span className="text-xs font-bold text-white block">Khung giờ điểm danh</span>
+                      <span className="text-[10px] text-slate-400">Thiết lập theo nhịp sinh hoạt của Cụ</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    data-testid="btn-open-schedule-modal"
+                    onClick={() => setIsScheduleModalOpen(true)}
+                    className="px-2.5 py-1 bg-emerald-950/80 hover:bg-emerald-900/90 border border-emerald-500/40 text-emerald-300 text-xs font-bold rounded-xl transition-all flex items-center gap-1 shadow-sm active:scale-95"
+                  >
+                    <span>✏️ Đổi giờ</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center pt-2 border-t border-slate-800/60">
+                  <div className="p-2 bg-slate-800/40 rounded-xl">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">Bắt đầu</span>
+                    <strong data-testid="schedule-start-display" className="text-xs text-emerald-400 font-bold">
+                      {formatTimeDisplay(currentSchedule?.checkin_start) || '07:00'}
+                    </strong>
+                  </div>
+                  <div className="p-2 bg-slate-800/40 rounded-xl">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">Hạn chót</span>
+                    <strong data-testid="schedule-deadline-display" className="text-xs text-amber-400 font-bold">
+                      {formatTimeDisplay(currentSchedule?.checkin_deadline) || '09:00'}
+                    </strong>
+                  </div>
+                  <div className="p-2 bg-slate-800/40 rounded-xl">
+                    <span className="text-[10px] text-slate-400 block mb-0.5">Chờ còi SOS</span>
+                    <strong data-testid="schedule-buffer-display" className="text-xs text-rose-400 font-bold">
+                      +{currentSchedule?.emergency_buffer_minutes ?? 30}p
+                    </strong>
+                  </div>
+                </div>
+              </div>
+
               {/* Nút bật/tắt quản lý danh bạ cứu hộ */}
               <div className="mb-4">
                 <button
@@ -601,6 +692,20 @@ export default function CaregiverScreen({
           contacts={emergencyContacts}
           isLoading={isLoadingContacts}
         />
+
+        {/* Modal Cài đặt Khung giờ Điểm danh */}
+        {linkedElderly && (
+          <ScheduleSettingsModal
+            isOpen={isScheduleModalOpen}
+            onClose={() => setIsScheduleModalOpen(false)}
+            elderlyId={linkedElderly.id}
+            elderlyName={linkedElderly.full_name}
+            currentSchedule={currentSchedule}
+            onScheduleUpdated={(updated) => {
+              setCurrentSchedule(updated);
+            }}
+          />
+        )}
 
       </div>
     </div>
