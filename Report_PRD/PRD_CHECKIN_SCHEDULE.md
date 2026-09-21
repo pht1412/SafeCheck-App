@@ -5,7 +5,7 @@
 > **Phiên bản:** v1.2 (Signed-off Production Architecture & Execution Baseline)  
 > **Trạng thái:** Đã hoàn thiện toàn bộ Invariant - Sẵn sàng thực thi Migration Phase 1  
 > **Hệ quy chiếu chuẩn:** Thực thể người cao tuổi `elderly_id` (UUID), bảng cấu hình lịch `checkin_schedules` gắn theo từng Cụ, bảng nhật ký điểm danh theo ngày `checkin_logs` đóng vai trò Source of Truth lịch sử cho Analytics.  
-> **Tài liệu tham chiếu:** [`PRD.md`](file:///c:/Users/lhp14/learn_afterUni/SafeCheck/PRD.md), [`PRD_AUTH_FAMILY.md`](file:///c:/Users/lhp14/learn_afterUni/SafeCheck/PRD_AUTH_FAMILY.md), [`PRD_SOS.md`](file:///c:/Users/lhp14/learn_afterUni/SafeCheck/PRD_SOS.md), [`PRD_Deep_v1.md`](file:///c:/Users/lhp14/learn_afterUni/SafeCheck/PRD_Deep_v1.md)
+
 
 ---
 

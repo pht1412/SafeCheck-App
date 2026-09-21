@@ -6,7 +6,7 @@
 > **Trạng thái:** Đã phê duyệt kiến trúc - Sẵn sàng lập Implementation Plan  
 > **Tác giả:** Đội ngũ Kỹ thuật SafeCheck  
 > **Hệ quy chiếu chuẩn:** Thực thể lõi gồm `elderly_id` (UUID), `sos_events` (Source of Truth khẩn cấp), `family_links` (`status = 'accepted'`). Tuyệt đối loại bỏ việc lưu trữ `pairing_code` trong nhật ký kiểm toán.  
-> **Tham chiếu liên quan:** [`PRD.md`](file:///c:/Users/lhp14/learn_afterUni/SafeCheck/PRD.md), [`PRD_AUTH_FAMILY.md`](file:///c:/Users/lhp14/learn_afterUni/SafeCheck/PRD_AUTH_FAMILY.md), [`PRD_SOS.md`](file:///c:/Users/lhp14/learn_afterUni/SafeCheck/PRD_SOS.md), [`PRD_NotiSOS.md`](file:///c:/Users/lhp14/learn_afterUni/SafeCheck/PRD_NotiSOS.md)
+
 
 ---
 
