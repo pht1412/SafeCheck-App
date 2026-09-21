@@ -206,6 +206,11 @@ test.describe('Module 09: Custom Check-in Schedule & Dynamic Engine (PRD_CHECKIN
       p_buffer_minutes: 30,
     });
 
+    // Đảm bảo không bị kẹt Emergency từ các module test trước
+    await clientCaregiver.rpc('resolve_alarm_atomic', {
+      p_elderly_id: elderlyId,
+    });
+
     // 1. Cụ điểm danh thành công -> Chuyển trạng thái sang Safe
     const { data: checkinRes } = await clientElderly.rpc('perform_checkin_atomic_v2', {
       p_elderly_id: elderlyId,

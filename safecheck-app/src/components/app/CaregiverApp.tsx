@@ -106,6 +106,15 @@ export default function CaregiverApp({ userProfile, signOut }: CaregiverAppProps
           console.warn('[CaregiverApp DevTool] Lỗi create_sos_event_idempotent:', rpcErr);
         }
       }
+    } else {
+      const targetElderlyId = linkedElderly?.id;
+      if (targetElderlyId) {
+        await supabase
+          .from('sos_events')
+          .update({ status: 'resolved', resolved_at: new Date().toISOString() })
+          .eq('elderly_id', targetElderlyId)
+          .eq('status', 'active');
+      }
     }
   };
 

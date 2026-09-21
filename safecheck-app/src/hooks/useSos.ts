@@ -114,13 +114,13 @@ export function useSos(params: {
     };
   }, [systemState, isSirenMuted, userProfile, linkedElderly]);
 
-  // ─── C. Auto-find activeSosEventId khi Emergency ─────────────────────────
-
+  // ─── C. Auto-find activeSosEventId + Realtime sos_events ────────────────
   useEffect(() => {
     const targetElderlyId =
       userProfile?.role === 'caregiver' ? linkedElderly?.id : userProfile?.id;
+    if (!targetElderlyId) return;
 
-    if (systemState === 'Emergency' && targetElderlyId) {
+    if (systemState === 'Emergency') {
       supabase
         .from('sos_events')
         .select('id, created_at')
@@ -137,13 +137,45 @@ export function useSos(params: {
             }
           }
         });
-    } else if (systemState !== 'Emergency') {
+    } else {
       /* eslint-disable react-hooks/set-state-in-effect */
       setActiveSosEventId(null);
       setSosStartTime(null);
       setHasServerAck(false);
       /* eslint-enable react-hooks/set-state-in-effect */
     }
+
+    // Lắng nghe Realtime sos_events để đồng bộ tắt/bật còi hai chiều giữa Cụ và Con cháu
+    const sosChannel = supabase
+      .channel(`sos_realtime_${targetElderlyId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'sos_events',
+          filter: `elderly_id=eq.${targetElderlyId}`,
+        },
+        (payload) => {
+          const newRow = payload.new as { id?: string; status?: string; created_at?: string } | undefined;
+          if (newRow) {
+            if (newRow.status === 'resolved') {
+              setSystemState('Safe');
+              setActiveSosEventId(null);
+              setIsSirenMuted(false);
+            } else if (newRow.status === 'active') {
+              setSystemState('Emergency');
+              setActiveSosEventId(newRow.id || null);
+              setIsSirenMuted(false);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(sosChannel);
+    };
   }, [systemState, linkedElderly, userProfile]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── D. `now` ticker + showCellularFallback ───────────────────────────────
@@ -257,18 +289,11 @@ export function useSos(params: {
         .from('sos_events')
         .select('id')
         .eq('elderly_id', targetElderlyId)
+        .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
       sosIdToResolve = latestEvent?.id || null;
-    }
-
-    if (!sosIdToResolve) {
-      console.warn('[useSos] Không có active sos_event_id để resolve — fallback reset');
-      // Fallback: reset UI state về Safe dù không có event
-      setSystemState('Safe');
-      setIsSirenMuted(false);
-      return;
     }
 
     const { data, error } = await supabase.rpc('resolve_alarm_atomic', {
@@ -282,7 +307,6 @@ export function useSos(params: {
 
     if (error) {
       console.error('[useSos] Lỗi resolve_alarm_atomic:', error);
-      // Error path: vẫn reset UI (siren stops via state transition)
       setSystemState('Safe');
       setIsSirenMuted(false);
       return;
@@ -290,7 +314,6 @@ export function useSos(params: {
 
     if (data?.error === 'CONFLICT_ALREADY_RESOLVED') {
       console.log('[useSos] Conflict: Báo động đã được giải quyết bởi thành viên khác:', data);
-      // Conflict path: full state reset + conflict toast
       setConflictToast(data.message || 'Báo động này đã được xử lý bởi thành viên khác.');
       setSystemState('Safe');
       setIsSirenMuted(false);
@@ -299,8 +322,13 @@ export function useSos(params: {
       return;
     }
 
+    if (data && !data.success) {
+      console.error('[useSos] Từ chối tắt báo động:', data.message);
+      alert(data.message || 'Không thể tắt báo động');
+      return;
+    }
+
     // Success path: full state reset
-    // Siren tự dừng vì systemState → 'Safe' → siren effect sẽ gọi stop()
     setSystemState('Safe');
     setIsSirenMuted(false);
     setActiveSosEventId(null);

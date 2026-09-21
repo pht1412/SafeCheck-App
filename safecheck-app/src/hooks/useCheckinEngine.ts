@@ -66,11 +66,20 @@ export function useCheckinEngine(params: {
       });
     }
 
-    const { data, error } = await supabase
+    let query = supabase
       .from('checkin_logs')
       .select('*')
-      .eq('family_code', activeFamilyCode)
-      .eq('log_date', today)
+      .eq('log_date', today);
+
+    if (targetElderlyId) {
+      query = query.or(`elderly_id.eq.${targetElderlyId},family_code.eq.${activeFamilyCode}`);
+    } else {
+      query = query.eq('family_code', activeFamilyCode);
+    }
+
+    const { data, error } = await query
+      .order('updated_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (data && !error) {
@@ -102,6 +111,9 @@ export function useCheckinEngine(params: {
     }
     /* eslint-enable react-hooks/set-state-in-effect */
 
+    const targetElderlyId =
+      userProfile?.role === 'elderly' ? userProfile.id : linkedElderly?.id;
+
     setRealtimeStatus('connecting');
     setIsLoading(true);
 
@@ -122,20 +134,32 @@ export function useCheckinEngine(params: {
           event: '*',
           schema: 'public',
           table: 'checkin_logs',
-          filter: `family_code=eq.${activeFamilyCode}`,
         },
         (payload) => {
-          const newRow = payload.new as { log_date?: string; status?: string; checkin_time?: string } | undefined;
-          if (newRow && newRow.log_date === getTodayDate() && newRow.status) {
-            setSystemState(newRow.status as SystemState);
-            if (newRow.checkin_time) {
-              const time = new Date(newRow.checkin_time).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              });
-              setCheckInTime(time);
-            } else {
-              setCheckInTime(null);
+          const newRow = payload.new as {
+            log_date?: string;
+            status?: string;
+            checkin_time?: string;
+            family_code?: string;
+            elderly_id?: string;
+          } | undefined;
+
+          if (newRow && newRow.log_date === getTodayDate()) {
+            const isMatch =
+              Boolean(activeFamilyCode && newRow.family_code === activeFamilyCode) ||
+              Boolean(targetElderlyId && newRow.elderly_id === targetElderlyId);
+
+            if (isMatch && newRow.status) {
+              setSystemState(newRow.status as SystemState);
+              if (newRow.checkin_time) {
+                const time = new Date(newRow.checkin_time).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                setCheckInTime(time);
+              } else {
+                setCheckInTime(null);
+              }
             }
           }
         }
