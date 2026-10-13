@@ -97,6 +97,9 @@ export default function ElderlyApp({ userProfile }: ElderlyAppProps) {
       pairingCode={userProfile.pairing_code}
       hasLinkedCaregivers={hasLinkedCaregivers}
       showCellularFallback={sos.showCellularFallback}
+      fallbackReason={sos.fallbackReason}
+      acknowledgements={sos.acknowledgements}
+      remainingEscalationSeconds={sos.remainingEscalationSeconds}
       primaryCaregiverName={primaryCaregiver?.name}
       primaryCaregiverPhone={primaryCaregiver?.phone}
       onCheckIn={performCheckIn}

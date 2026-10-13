@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from 'react';
 import { supabase } from '../supabaseClient';
 import { SirenPlayer } from '../utils/sirenPlayer';
 import { offlineQueueService } from '../services/offlineQueueService';
+import { sosAcknowledgementService, type SOSAcknowledgement } from '../services/sosAcknowledgementService';
 import type { SystemState } from '../types';
 import type { UserProfile } from '../types';
 import type { LinkedElderly } from './useFamilyLink';
@@ -12,6 +13,11 @@ export interface UseSosReturn {
   sosCountdown: number | null;
   isSirenMuted: boolean;
   activeSosEventId: string | null;
+  acknowledgements: SOSAcknowledgement[];
+  escalationDeadline: string | null;
+  remainingEscalationSeconds: number | null;
+  isEscalated: boolean;
+  fallbackReason: 'offline' | 'sla_timeout' | null;
   showCellularFallback: boolean;
   startSosHold: () => void;
   cancelSosHold: () => void;
@@ -39,7 +45,8 @@ export interface UseSosReturn {
  * - SOS hold 3s → countdown 10s → trigger Emergency
  * - Siren lifecycle (SirenPlayer start/stop theo state)
  * - Auto-find activeSosEventId khi Emergency
- * - Cellular Fallback (10s không có server ACK)
+ * - SLA Escalation Deadline & Tiếp nhận Realtime (sos_acknowledgements)
+ * - Cellular Fallback (10s không có server ACK hoặc 120s không ai nhận)
  * - resolveAlarm() với full post-resolution state transition
  * - handleOfflineFlushSucceeded (callback cho useOfflineSync)
  *
@@ -66,6 +73,11 @@ export function useSos(params: {
   const [hasServerAck, setHasServerAck] = useState<boolean>(false);
   const [now, setNow] = useState<number>(() => Date.now()); // lazy initializer — avoids calling Date.now during render
   const [conflictToast, setConflictToast] = useState<string | null>(null);
+
+  // Phase 3 State: Quản lý Tiếp nhận & Leo thang khẩn cấp
+  const [acknowledgements, setAcknowledgements] = useState<SOSAcknowledgement[]>([]);
+  const [escalationDeadline, setEscalationDeadline] = useState<string | null>(null);
+  const [isEscalated, setIsEscalated] = useState<boolean>(false);
 
   const sosHoldTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sosCountdownIntervalRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -123,7 +135,7 @@ export function useSos(params: {
     if (systemState === 'Emergency') {
       supabase
         .from('sos_events')
-        .select('id, created_at')
+        .select('id, created_at, escalation_deadline, escalated_at')
         .eq('elderly_id', targetElderlyId)
         .eq('status', 'active')
         .order('created_at', { ascending: false })
@@ -132,6 +144,8 @@ export function useSos(params: {
         .then(({ data }) => {
           if (data) {
             setActiveSosEventId(data.id);
+            setEscalationDeadline(data.escalation_deadline || null);
+            setIsEscalated(Boolean(data.escalated_at));
             if (!sosStartTime) {
               setSosStartTime(new Date(data.created_at).getTime());
             }
@@ -142,12 +156,22 @@ export function useSos(params: {
       setActiveSosEventId(null);
       setSosStartTime(null);
       setHasServerAck(false);
+      setAcknowledgements([]);
+      setEscalationDeadline(null);
+      setIsEscalated(false);
       /* eslint-enable react-hooks/set-state-in-effect */
     }
+  }, [systemState, linkedElderly?.id, userProfile?.id, userProfile?.role, sosStartTime]);
 
-    // Lắng nghe Realtime sos_events để đồng bộ tắt/bật còi hai chiều giữa Cụ và Con cháu
+  // Lắng nghe Realtime sos_events độc lập - chỉ gắn 1 lần theo targetElderlyId
+  useEffect(() => {
+    const targetElderlyId =
+      userProfile?.role === 'caregiver' ? linkedElderly?.id : userProfile?.id;
+    if (!targetElderlyId) return;
+
+    const channelName = `sos_realtime_${targetElderlyId}_${Math.random().toString(36).slice(2, 7)}`;
     const sosChannel = supabase
-      .channel(`sos_realtime_${targetElderlyId}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -157,15 +181,26 @@ export function useSos(params: {
           filter: `elderly_id=eq.${targetElderlyId}`,
         },
         (payload) => {
-          const newRow = payload.new as { id?: string; status?: string; created_at?: string } | undefined;
+          const newRow = payload.new as {
+            id?: string;
+            status?: string;
+            created_at?: string;
+            escalation_deadline?: string;
+            escalated_at?: string;
+          } | undefined;
           if (newRow) {
             if (newRow.status === 'resolved') {
               setSystemState('Safe');
               setActiveSosEventId(null);
               setIsSirenMuted(false);
+              setAcknowledgements([]);
+              setEscalationDeadline(null);
+              setIsEscalated(false);
             } else if (newRow.status === 'active') {
               setSystemState('Emergency');
               setActiveSosEventId(newRow.id || null);
+              if (newRow.escalation_deadline) setEscalationDeadline(newRow.escalation_deadline);
+              if (newRow.escalated_at) setIsEscalated(true);
               setIsSirenMuted(false);
             }
           }
@@ -174,14 +209,33 @@ export function useSos(params: {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(sosChannel);
+      void supabase.removeChannel(sosChannel);
     };
-  }, [systemState, linkedElderly, userProfile]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [linkedElderly?.id, userProfile?.id, userProfile?.role, setSystemState]);
 
-  // ─── D. `now` ticker + showCellularFallback ───────────────────────────────
+  // ─── C2. Realtime Lắng nghe Tiếp nhận cứu hộ (sos_acknowledgements) ─────────
+  useEffect(() => {
+    if (systemState !== 'Emergency' || !activeSosEventId) {
+      return;
+    }
+
+    // Đăng ký nhận thông báo tiếp nhận qua service 3 bước
+    const unsubscribe = sosAcknowledgementService.subscribeAcknowledgements(
+      activeSosEventId,
+      (newAcks) => {
+        setAcknowledgements(newAcks);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [systemState, activeSosEventId]);
+
+  // ─── D. `now` ticker + SLA Countdown + showCellularFallback ───────────────
 
   useEffect(() => {
-    if (systemState !== 'Emergency' || hasServerAck) return;
+    if (systemState !== 'Emergency') return;
     const interval = setInterval(() => {
       setNow(Date.now());
     }, 1000);
@@ -191,13 +245,59 @@ export function useSos(params: {
       clearInterval(interval);
       window.removeEventListener('visibilitychange', handleVis);
     };
-  }, [systemState, hasServerAck]);
+  }, [systemState]);
 
-  const showCellularFallback =
+  // Tính số giây còn lại của thời hạn SLA (120 giây)
+  const remainingEscalationSeconds: number | null = (() => {
+    if (systemState !== 'Emergency') return null;
+    if (acknowledgements.length > 0) return null; // Đã có người nhận
+    if (escalationDeadline) {
+      const deadlineMs = new Date(escalationDeadline).getTime();
+      return Math.max(0, Math.ceil((deadlineMs - now) / 1000));
+    }
+    if (sosStartTime) {
+      return Math.max(0, Math.ceil((sosStartTime + 120000 - now) / 1000));
+    }
+    return null;
+  })();
+
+  // Tự động kích hoạt leo thang khẩn cấp khi hết hạn SLA và chưa có ai nhận
+  useEffect(() => {
+    if (
+      systemState === 'Emergency' &&
+      activeSosEventId &&
+      remainingEscalationSeconds === 0 &&
+      acknowledgements.length === 0 &&
+      !isEscalated
+    ) {
+      /* eslint-disable react-hooks/set-state-in-effect */
+      setIsEscalated(true);
+      /* eslint-enable react-hooks/set-state-in-effect */
+      sosAcknowledgementService.escalateSOS(activeSosEventId).catch((err) => {
+        console.warn('[useSos] Lỗi escalateSOS:', err);
+      });
+    }
+  }, [systemState, activeSosEventId, remainingEscalationSeconds, acknowledgements.length, isEscalated]);
+
+  // Điều kiện kích hoạt Fallback viễn thông
+  const isOfflineTimeout =
     systemState === 'Emergency' &&
     !hasServerAck &&
     sosStartTime !== null &&
     now - sosStartTime >= 10000;
+
+  const isSlaExpired =
+    systemState === 'Emergency' &&
+    acknowledgements.length === 0 &&
+    remainingEscalationSeconds !== null &&
+    remainingEscalationSeconds <= 0;
+
+  const showCellularFallback = isOfflineTimeout || isSlaExpired;
+  const fallbackReason: 'offline' | 'sla_timeout' | null = isSlaExpired
+    ? 'sla_timeout'
+    : isOfflineTimeout
+      ? 'offline'
+      : null;
 
   // ─── E. SOS Countdown state machine (10s → 0 → trigger Emergency) ─────────
 
@@ -352,6 +452,11 @@ export function useSos(params: {
     sosCountdown,
     isSirenMuted,
     activeSosEventId,
+    acknowledgements,
+    escalationDeadline,
+    remainingEscalationSeconds,
+    isEscalated,
+    fallbackReason,
     showCellularFallback,
     startSosHold,
     cancelSosHold,

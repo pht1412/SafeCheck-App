@@ -7,6 +7,7 @@ import { ScheduleSettingsModal } from './ScheduleSettingsModal';
 import { emergencyContactsService } from '../services/emergencyContactsService';
 import { pushNotificationService } from '../services/pushNotificationService';
 import { checkinScheduleService, formatTimeDisplay } from '../services/checkinScheduleService';
+import { sosAcknowledgementService, type SOSAcknowledgement } from '../services/sosAcknowledgementService';
 import { supabase } from '../supabaseClient';
 
 interface LinkedElderly {
@@ -27,6 +28,7 @@ interface CaregiverScreenProps {
   isSirenMuted: boolean;
   caregiverName?: string;
   linkedElderly?: LinkedElderly | null;
+  activeSosEventId?: string | null;
   isTester?: boolean;
   conflictToast?: string | null;
   onSendPing: () => void;
@@ -48,6 +50,7 @@ export default function CaregiverScreen({
   isSirenMuted,
   caregiverName,
   linkedElderly,
+  activeSosEventId,
   isTester = false,
   conflictToast,
   onSendPing,
@@ -63,6 +66,58 @@ export default function CaregiverScreen({
   const [relationshipInput, setRelationshipInput] = useState('Con trai');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
+
+  // Phase 3: State quản lý Tiếp nhận cứu hộ & Xác nhận giải quyết
+  const [acknowledgements, setAcknowledgements] = useState<SOSAcknowledgement[]>([]);
+  const [isAcknowledging, setIsAcknowledging] = useState<boolean>(false);
+  const [ackError, setAckError] = useState<string | null>(null);
+  const [isResolveConfirmOpen, setIsResolveConfirmOpen] = useState<boolean>(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  // Lấy current user ID để xác định con cháu hiện tại đã nhận tin hay chưa
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      if (data?.user?.id) {
+        setCurrentUserId(data.user.id);
+      }
+    });
+  }, []);
+
+  // Lắng nghe Realtime tiếp nhận khi có ca Emergency và có activeSosEventId
+  useEffect(() => {
+    if (systemState !== 'Emergency' || !activeSosEventId) {
+      setAcknowledgements([]);
+      return;
+    }
+
+    const unsubscribe = sosAcknowledgementService.subscribeAcknowledgements(
+      activeSosEventId,
+      (acks) => {
+        setAcknowledgements(acks);
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [systemState, activeSosEventId]);
+
+  const isAcknowledgedByMe = acknowledgements.some(
+    (a) =>
+      (currentUserId && a.caregiver_id === currentUserId) ||
+      (caregiverName && a.caregiver_name === caregiverName)
+  );
+
+  const handleAcknowledge = async () => {
+    if (!activeSosEventId) return;
+    setIsAcknowledging(true);
+    setAckError(null);
+    const res = await sosAcknowledgementService.acknowledgeSOS(activeSosEventId, 'app_click');
+    if (!res.success) {
+      setAckError(res.error || 'Không thể tiếp nhận');
+    }
+    setIsAcknowledging(false);
+  };
 
   // State quản lý danh bạ cứu hộ
   const [isContactsModalOpen, setIsContactsModalOpen] = useState(false);
@@ -292,12 +347,70 @@ export default function CaregiverScreen({
                     {elderlyName} vừa kích hoạt SOS cần sự giúp đỡ ngay lập tức!
                   </p>
 
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-2.5">
+                    {/* Nút hoặc Badge Xác nhận Tiếp nhận cứu hộ */}
+                    {!isAcknowledgedByMe ? (
+                      <button
+                        type="button"
+                        data-testid="acknowledge-sos-button"
+                        disabled={isAcknowledging}
+                        onClick={handleAcknowledge}
+                        className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 active:scale-95 disabled:opacity-50 text-slate-950 font-black text-sm rounded-xl flex items-center justify-center gap-2 shadow-xl ring-2 ring-amber-300 transition-all animate-bounce"
+                      >
+                        <span>🚨</span>
+                        <span>{isAcknowledging ? 'ĐANG TIẾP NHẬN...' : 'TÔI ĐÃ TIẾP NHẬN CỨU HỘ'}</span>
+                      </button>
+                    ) : (
+                      <div
+                        data-testid="acknowledged-by-me-badge"
+                        className="w-full py-2.5 bg-emerald-950/90 border-2 border-emerald-500 text-emerald-300 font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-md"
+                      >
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>🛡️ BẠN ĐÃ TIẾP NHẬN CA CỨU HỘ NÀY</span>
+                      </div>
+                    )}
+
+                    {ackError && (
+                      <p className="text-[10px] text-rose-300 font-medium">{ackError}</p>
+                    )}
+
+                    {/* Danh sách người thân đã tiếp nhận Realtime */}
+                    {acknowledgements && acknowledgements.length > 0 && (
+                      <div
+                        data-testid="sos-acknowledgements-list"
+                        className="bg-slate-900/90 border border-slate-800 rounded-xl p-3 text-left space-y-1.5 shadow-inner"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] uppercase font-bold text-slate-400">
+                            Đã tiếp nhận ({acknowledgements.length}):
+                          </span>
+                          <span className="text-[10px] text-emerald-400 font-semibold">Realtime</span>
+                        </div>
+                        {acknowledgements.map((ack) => (
+                          <div
+                            key={ack.id}
+                            data-testid={`ack-item-${ack.caregiver_id}`}
+                            className="flex justify-between items-center text-slate-200 text-xs py-0.5 border-b border-slate-800/40 last:border-0"
+                          >
+                            <span className="font-semibold text-emerald-300">
+                              ✓ {ack.caregiver_name || 'Người thân'}
+                            </span>
+                            <span className="text-slate-400 font-mono text-[10px]">
+                              {new Date(ack.acknowledged_at).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <button
                       type="button"
                       data-testid="open-emergency-directory-btn"
                       onClick={() => setIsContactsModalOpen(true)}
-                      className="w-full py-3.5 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-black text-sm rounded-xl flex items-center justify-center gap-2 shadow-xl ring-2 ring-rose-300 transition-all animate-pulse"
+                      className="w-full py-3 bg-rose-600 hover:bg-rose-500 active:scale-95 text-white font-black text-xs rounded-xl flex items-center justify-center gap-2 shadow-lg ring-1 ring-rose-300 transition-all"
                     >
                       <span>🚨 MỞ DANH BẠ CỨU HỘ KHẨN CẤP</span>
                     </button>
@@ -567,8 +680,14 @@ export default function CaregiverScreen({
               systemState === 'Late') && (
                 <button
                   data-testid="resolve-alarm-button"
-                  onClick={onResolveAlarm}
-                  className="w-full py-3 bg-emerald-700 hover:bg-emerald-600 text-white rounded-xl font-bold text-sm"
+                  onClick={() => {
+                    if (systemState === 'Emergency') {
+                      setIsResolveConfirmOpen(true);
+                    } else {
+                      onResolveAlarm();
+                    }
+                  }}
+                  className="w-full py-3 bg-emerald-700 hover:bg-emerald-600 active:scale-95 text-white rounded-xl font-bold text-sm transition-all"
                 >
                   Xác nhận an toàn / Tắt báo động
                 </button>
@@ -705,6 +824,45 @@ export default function CaregiverScreen({
               setCurrentSchedule(updated);
             }}
           />
+        )}
+
+        {/* Modal Xác nhận An Toàn trước khi Tắt Còi Báo Động Khẩn Cấp */}
+        {isResolveConfirmOpen && (
+          <div
+            data-testid="resolve-confirm-modal"
+            className="absolute inset-0 z-50 bg-slate-950/95 p-6 flex flex-col justify-center items-center text-center animate-in fade-in"
+          >
+            <div className="text-4xl mb-3">❓🛡️</div>
+            <h3 className="text-white text-lg font-black mb-2">XÁC NHẬN AN TOÀN</h3>
+            <p className="text-slate-300 text-xs mb-6 leading-relaxed">
+              Bạn có chắc chắn rằng <strong>{elderlyName}</strong> đã thực sự an toàn và đã được liên hệ trực tiếp chưa?
+              <br />
+              <span className="text-amber-400 font-semibold">
+                Thao tác này sẽ tắt còi báo động trên toàn bộ thiết bị trong gia đình.
+              </span>
+            </p>
+            <div className="flex flex-col gap-2.5 w-full">
+              <button
+                type="button"
+                data-testid="confirm-resolve-button"
+                onClick={() => {
+                  setIsResolveConfirmOpen(false);
+                  onResolveAlarm();
+                }}
+                className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black text-sm rounded-xl shadow-lg transition-all"
+              >
+                🟢 XÁC NHẬN ĐÃ AN TOÀN / TẮT CÒI
+              </button>
+              <button
+                type="button"
+                data-testid="cancel-resolve-button"
+                onClick={() => setIsResolveConfirmOpen(false)}
+                className="w-full py-3 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold text-xs rounded-xl border border-slate-700 transition-all"
+              >
+                QUAY LẠI
+              </button>
+            </div>
+          </div>
         )}
 
       </div>

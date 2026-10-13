@@ -10,24 +10,31 @@ import React from 'react';
 interface CellularFallbackCardProps {
   primaryCaregiverName?: string;
   primaryCaregiverPhone?: string;
+  reason?: 'offline' | 'sla_timeout' | null;
   onResolveAlarm?: () => void;
 }
 
 export const CellularFallbackCard: React.FC<CellularFallbackCardProps> = ({
   primaryCaregiverName = 'Con cháu',
   primaryCaregiverPhone = '0901234567',
+  reason = 'offline',
   onResolveAlarm,
 }) => {
+  const isSlaTimeout = reason === 'sla_timeout';
+
   return (
     <div
       data-testid="cellular-fallback-card"
       className="w-full bg-gradient-to-b from-amber-950/95 via-rose-950/95 to-slate-950 border-4 border-amber-500 rounded-3xl p-5 text-center shadow-2xl animate-in zoom-in-95 duration-300 ring-4 ring-amber-500/40"
     >
-      {/* Icon & Cảnh báo mạng gián đoạn */}
+      {/* Icon & Cảnh báo trạng thái minh bạch */}
       <div className="flex items-center justify-center gap-2 mb-2">
-        <span className="text-3xl animate-bounce">📡⚠️</span>
-        <span className="text-xs font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded-full">
-          MẤT SÓNG INTERNET
+        <span className="text-3xl animate-bounce">{isSlaTimeout ? '⏳⚠️' : '📡⚠️'}</span>
+        <span
+          data-testid="fallback-reason-badge"
+          className="text-xs font-black uppercase tracking-wider bg-amber-500 text-slate-950 px-2.5 py-1 rounded-full"
+        >
+          {isSlaTimeout ? 'QUÁ HẠN CHỜ PHẢN HỒI (SLA)' : 'MẤT SÓNG INTERNET'}
         </span>
       </div>
 
@@ -36,11 +43,23 @@ export const CellularFallbackCard: React.FC<CellularFallbackCardProps> = ({
       </h3>
 
       <p className="text-amber-200 text-xs mb-4 leading-relaxed">
-        Yêu cầu SOS đã được lưu vào máy và sẽ tự động gửi khi có mạng.
-        <br />
-        <strong className="text-white underline">
-          Cụ hãy bấm nút to bên dưới để gọi trực tiếp qua sóng viễn thông:
-        </strong>
+        {isSlaTimeout ? (
+          <>
+            Đã quá thời gian chờ mà chưa có người thân nào bấm xác nhận tiếp nhận trên ứng dụng.
+            <br />
+            <strong className="text-white underline">
+              Cụ hãy bấm nút to bên dưới để gọi trực tiếp qua sóng viễn thông:
+            </strong>
+          </>
+        ) : (
+          <>
+            Yêu cầu SOS đã được lưu vào máy và sẽ tự động gửi khi có mạng.
+            <br />
+            <strong className="text-white underline">
+              Cụ hãy bấm nút to bên dưới để gọi trực tiếp qua sóng viễn thông:
+            </strong>
+          </>
+        )}
       </p>
 
       {/* Nút 1: Gọi cấp cứu 115 cực đại */}

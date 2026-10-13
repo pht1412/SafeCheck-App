@@ -100,6 +100,19 @@ test.describe('Module 07: Concurrency & Race Condition Control (PRD_Deep_v1)', (
       resolveBtnB.click(),
     ]);
 
+    // Nếu có confirm modal (Phase 3 safety confirmation), bấm confirm đồng thời trên cả 2 trang
+    const confirmA = pageA.getByTestId('confirm-resolve-button');
+    const confirmB = pageB.getByTestId('confirm-resolve-button');
+    const isModalA = await confirmA.isVisible({ timeout: 1500 }).catch(() => false);
+    const isModalB = await confirmB.isVisible({ timeout: 1500 }).catch(() => false);
+
+    if (isModalA && isModalB) {
+      await Promise.all([
+        confirmA.click(),
+        confirmB.click(),
+      ]);
+    }
+
     // Chờ 1.5 giây để cả 2 request hoàn tất và UI render
     await pageA.waitForTimeout(1500);
     await pageB.waitForTimeout(1500);

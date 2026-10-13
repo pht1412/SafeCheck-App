@@ -14,51 +14,90 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-// 1. LẮNG NGHE SỰ KIỆN PUSH TỪ MÁY CHỦ APNs / FCM
+// 1. LẮNG NGHE SỰ KIỆN PUSH TỪ MÁY CHỦ APNs / FCM (ZERO-NETWORK & ZERO-PHANTOM-SOS)
 self.addEventListener('push', (event) => {
-  let data = {};
-  if (event.data) {
-    try {
-      data = event.data.json();
-    } catch (e) {
-      data = { body: event.data.text() };
-    }
+  // 1.1. Kiểm tra sự tồn tại của payload
+  if (!event.data) {
+    console.warn('[SW-Push] Bỏ qua push event không có payload (Chống Phantom SOS)');
+    return;
   }
 
-  const sosEventId = data.sos_event_id || '';
-  const title = data.title || '🚨 SafeCheck - CẢNH BÁO SOS KHẨN CẤP!';
-  const targetUrl = data.url || (sosEventId ? `/?sos=${sosEventId}` : '/');
+  // 1.2. Giải mã JSON payload
+  let data;
+  try {
+    data = event.data.json();
+  } catch (e) {
+    console.warn('[SW-Push] Bỏ qua push event có payload JSON hỏng (Chống Phantom SOS):', e);
+    return;
+  }
 
+  // 1.3. Thẩm định định danh sự kiện SOS bắt buộc
+  const sosEventId = (data.sos_event_id || '').trim();
+  const isValidUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sosEventId);
+
+  if (!sosEventId || !isValidUuid) {
+    console.warn('[SW-Push] Bỏ qua push event thiếu sos_event_id hợp lệ (Chống Phantom SOS):', data);
+    return;
+  }
+
+  // 1.4. Phân loại lượt gửi ban đầu vs lượt retry
+  const isRetry = Boolean(data.is_retry);
+  const isUpdate = Boolean(data.is_update);
+  const elderlyName = (data.elderly_name || '').trim() || 'Người thân';
+
+  const title = isUpdate
+    ? `ℹ️ SafeCheck - Cập nhật trạng thái: ${elderlyName}`
+    : `🚨 SafeCheck - BÁO ĐỘNG SOS: ${elderlyName}`;
+
+  const body = data.body || `${elderlyName} vừa kích hoạt cảnh báo cứu hộ! Nhấn để kiểm tra ngay.`;
+  const targetUrl = `/?sos=${encodeURIComponent(sosEventId)}`;
+
+  // 1.5. Cấu hình Notification Options chuẩn W3C
   const options = {
-    body: data.body || 'Người thân vừa kích hoạt báo động cứu hộ! Nhấn để kiểm tra ngay.',
+    body,
     icon: '/apple-touch-icon.png',
     badge: '/icon-192.png',
-    tag: `safecheck-sos-${sosEventId || 'general'}`,
-    renotify: true,
+    tag: `safecheck-sos-${sosEventId}`, // Tag ổn định để gom cụm và cập nhật theo từng ca SOS
+    // Nếu là đợt retry (gửi bù), yêu cầu renotify = false để không reo chuông/rung lại trên các OS hỗ trợ
+    renotify: isUpdate ? false : !isRetry,
+    requireInteraction: true,
     vibrate: [500, 200, 500, 200, 500, 200, 1000],
     data: {
       sos_event_id: sosEventId,
       url: targetUrl,
       timestamp: data.timestamp || Date.now(),
+      attempt_count: data.attempt_count || 1,
+      is_retry: isRetry,
+      schema_version: data.schema_version || 1,
     },
   };
 
+  // 1.6. Hiển thị thông báo và bắt lỗi có kiểm soát
   event.waitUntil(
     self.registration.showNotification(title, options).catch((err) => {
-      console.warn('[SW] showNotification lỗi, dùng fallback tối giản:', err);
-      return self.registration.showNotification(title, {
-        body: options.body,
-        icon: '/apple-touch-icon.png',
-      });
+      console.warn('[SW-Push] showNotification gặp lỗi từ chối:', err);
     })
   );
 });
 
-// 2. LẮNG NGHE THAO TÁC CHẠM VÀO THÔNG BÁO (NOTIFICATION CLICK)
+// 2. LẮNG NGHE THAO TÁC CHẠM VÀO THÔNG BÁO (NOTIFICATION CLICK & SAFE DEEP-LINK)
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
-  const targetUrl = event.notification.data?.url || '/';
+  const rawUrl = event.notification.data?.url || '/';
+  let targetPath = '/';
+
+  // Thẩm định an toàn origin của URL
+  try {
+    const parsed = new URL(rawUrl, self.location.origin);
+    if (parsed.origin === self.location.origin) {
+      targetPath = parsed.pathname + parsed.search + parsed.hash;
+    }
+  } catch (e) {
+    targetPath = '/';
+  }
+
+  const fullTargetUrl = new URL(targetPath, self.location.origin).href;
 
   event.waitUntil(
     self.clients
@@ -68,16 +107,19 @@ self.addEventListener('notificationclick', (event) => {
         for (const client of clientList) {
           if ('focus' in client) {
             client.focus();
-            if ('navigate' in client && targetUrl) {
-              return client.navigate(targetUrl);
+            if ('navigate' in client && targetPath !== '/') {
+              return client.navigate(fullTargetUrl);
             }
             return client;
           }
         }
         // Nếu chưa có cửa sổ nào đang mở, mở cửa sổ mới
         if (self.clients.openWindow) {
-          return self.clients.openWindow(targetUrl);
+          return self.clients.openWindow(fullTargetUrl);
         }
+      })
+      .catch((err) => {
+        console.warn('[SW-Click] Lỗi điều hướng notificationclick:', err);
       })
   );
 });

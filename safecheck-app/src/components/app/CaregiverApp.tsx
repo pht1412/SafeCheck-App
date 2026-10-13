@@ -74,6 +74,7 @@ export default function CaregiverApp({ userProfile, signOut }: CaregiverAppProps
     userProfile,
     onFeedback: triggerFeedback,
     onPlayChime: playChime,
+    onPingSuccess: () => setSystemState('Ping_Requested'),
   });
 
   // ─── DevTool: Cập nhật trực tiếp trạng thái (chỉ dùng để test) ────────────
@@ -83,9 +84,14 @@ export default function CaregiverApp({ userProfile, signOut }: CaregiverAppProps
 
   const setManualStatus = async (status: SystemState) => {
     if (!activeFamilyCode) return;
+    setSystemState(status);
+    const updatePayload: { status: SystemState; checkin_time?: null } = { status };
+    if (status !== 'Safe') {
+      updatePayload.checkin_time = null;
+    }
     await supabase
       .from('checkin_logs')
-      .update({ status })
+      .update(updatePayload)
       .eq('family_code', activeFamilyCode)
       .eq('log_date', getTodayDate());
 
@@ -137,6 +143,7 @@ export default function CaregiverApp({ userProfile, signOut }: CaregiverAppProps
       isSirenMuted={sos.isSirenMuted}
       caregiverName={userProfile.full_name}
       linkedElderly={linkedElderly}
+      activeSosEventId={sos.activeSosEventId}
       isTester={userProfile.email?.toLowerCase() === 'test01@gmail.com'}
       conflictToast={ping.conflictToast ?? sos.conflictToast}
       onSendPing={ping.sendPing}

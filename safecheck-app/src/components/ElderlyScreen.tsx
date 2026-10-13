@@ -1,4 +1,5 @@
 import type { SystemState } from '../types';
+import type { SOSAcknowledgement } from '../services/sosAcknowledgementService';
 import CellularFallbackCard from './CellularFallbackCard';
 
 interface ElderlyScreenProps {
@@ -13,6 +14,9 @@ interface ElderlyScreenProps {
   pairingCode?: string | null;
   hasLinkedCaregivers?: boolean;
   showCellularFallback?: boolean;
+  fallbackReason?: 'offline' | 'sla_timeout' | null;
+  acknowledgements?: SOSAcknowledgement[];
+  remainingEscalationSeconds?: number | null;
   primaryCaregiverName?: string;
   primaryCaregiverPhone?: string;
   onCheckIn: () => void;
@@ -34,6 +38,9 @@ export default function ElderlyScreen({
   pairingCode,
   hasLinkedCaregivers = false,
   showCellularFallback = false,
+  fallbackReason = 'offline',
+  acknowledgements = [],
+  remainingEscalationSeconds = null,
   primaryCaregiverName,
   primaryCaregiverPhone,
   onCheckIn,
@@ -128,6 +135,7 @@ export default function ElderlyScreen({
                 <CellularFallbackCard
                   primaryCaregiverName={primaryCaregiverName}
                   primaryCaregiverPhone={primaryCaregiverPhone}
+                  reason={fallbackReason}
                   onResolveAlarm={onResolveAlarm}
                 />
               ) : hasLinkedCaregivers ? (
@@ -138,6 +146,52 @@ export default function ElderlyScreen({
                   <p className="text-rose-200 text-sm mb-3">
                     Đã phát còi và báo động khẩn cấp tới con cháu!
                   </p>
+
+                  {/* 1. Banner an tâm trung thực khi con cháu đã xác nhận tiếp nhận */}
+                  {acknowledgements && acknowledgements.length > 0 && (
+                    <div
+                      data-testid="sos-acknowledged-banner"
+                      className="w-full bg-emerald-950/90 border-2 border-emerald-500 rounded-2xl p-3 text-center mb-3 shadow-lg animate-in fade-in"
+                    >
+                      <div className="flex items-center justify-center gap-1.5 text-emerald-400 font-black text-sm">
+                        <span>✅</span>
+                        <span>CON CHÁU ĐÃ NHẬN ĐƯỢC TIN!</span>
+                      </div>
+                      <p className="text-emerald-200 text-xs mt-1 font-medium">
+                        <strong>{acknowledgements[0].caregiver_name || 'Người thân'}</strong> đã tiếp nhận lúc{' '}
+                        {new Date(acknowledgements[0].acknowledged_at).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                      </p>
+                      <p className="text-slate-300 text-[11px] mt-1">
+                        Cụ hãy giữ máy bên cạnh nhé, con cháu đang liên hệ hỗ trợ Cụ!
+                      </p>
+                    </div>
+                  )}
+
+                  {/* 2. Cảnh báo mất kết nối mạng khi offline */}
+                  {typeof navigator !== 'undefined' && !navigator.onLine && (
+                    <div
+                      data-testid="sos-offline-warning"
+                      className="w-full bg-amber-950/90 border border-amber-500 rounded-xl p-2.5 text-center mb-3 text-amber-200 text-xs font-semibold"
+                    >
+                      ⚠️ Đang mất kết nối Internet — Chưa thể xác nhận phản hồi từ con cháu
+                    </div>
+                  )}
+
+                  {/* 3. Đếm ngược SLA chờ con cháu tiếp nhận */}
+                  {acknowledgements &&
+                    acknowledgements.length === 0 &&
+                    remainingEscalationSeconds !== null &&
+                    remainingEscalationSeconds > 0 && (
+                      <div
+                        data-testid="sos-escalation-countdown"
+                        className="w-full bg-slate-900/90 border border-slate-700 rounded-xl p-2.5 text-center mb-3 text-slate-300 text-xs"
+                      >
+                        ⏳ Đang chờ người thân tiếp nhận... ({remainingEscalationSeconds}s)
+                      </div>
+                    )}
 
                   {/* Nút gọi khẩn cấp 115 - Luôn sẵn sàng kể cả khi đã có con cháu */}
                   <a

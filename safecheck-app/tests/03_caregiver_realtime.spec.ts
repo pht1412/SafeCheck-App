@@ -13,6 +13,24 @@ async function unlinkCaregiver(email: string, password: string) {
   }
 }
 
+// Helper dọn dẹp trạng thái SOS tồn đọng trước khi chạy kịch bản SOS
+async function cleanupActiveSos() {
+  const sb = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const { data: auth } = await sb.auth.signInWithPassword({ email: 'test01@gmail.com', password: 'test01@gmail.com' });
+  if (auth?.user) {
+    const { data: elderly } = await sb.from('family_links').select('elderly_id').eq('caregiver_id', auth.user.id).limit(1).maybeSingle();
+    if (elderly?.elderly_id) {
+      await sb.rpc('resolve_alarm_atomic', {
+        p_elderly_id: elderly.elderly_id,
+        p_sos_event_id: null,
+        p_note: 'Dọn dẹp test',
+      });
+      const today = new Date().toISOString().split('T')[0];
+      await sb.from('checkin_logs').update({ status: 'Waiting', checkin_time: null }).eq('log_date', today);
+    }
+  }
+}
+
 test.describe('Module 03: Màn hình Con cháu & Đồng bộ Realtime (Caregiver & Realtime)', () => {
   test.describe.configure({ mode: 'serial' });
 
@@ -122,12 +140,11 @@ test.describe('Module 03: Màn hình Con cháu & Đồng bộ Realtime (Caregive
     // -----------------------------------------------------------------
     // Để bài test luôn chuẩn xác, ta bấm "Set Waiting" để đưa Cụ về trạng thái Chờ điểm danh
     const setWaitingBtn = pageCaregiver.getByRole('button', { name: 'Set Waiting' });
-    if (await setWaitingBtn.isVisible()) {
-      await setWaitingBtn.click();
-      // Chờ trạng thái Waiting xuất hiện trên cả 2 màn hình (Comment 5.3)
-      await expect(pageCaregiver.getByTestId('status-text')).toContainText(/Chờ/i, { timeout: 10000 });
-      await expect(pageElderly.getByTestId('checkin-button')).toContainText(/HÔM NAY/i, { timeout: 10000 });
-    }
+    await expect(setWaitingBtn).toBeVisible({ timeout: 10000 });
+    await setWaitingBtn.click();
+    // Chờ trạng thái Waiting xuất hiện trên cả 2 màn hình (Comment 5.3)
+    await expect(pageCaregiver.getByTestId('status-text')).toContainText(/Chờ/i, { timeout: 10000 });
+    await expect(pageElderly.getByTestId('checkin-button')).toContainText(/HÔM NAY/i, { timeout: 10000 });
 
     // -----------------------------------------------------------------
     // BƯỚC D: CỤ BẤM ĐIỂM DANH Ở CỬA SỔ 1 -> KIỂM TRA CỬA SỔ 2 ĐỔI MÀU
@@ -242,6 +259,9 @@ test.describe('Module 03: Màn hình Con cháu & Đồng bộ Realtime (Caregive
   // TEST CASE 5: Toàn bộ vòng đời Cụ bấm SOS -> Con cháu bấm Tắt báo động
   // ===================================================================
   test('TC05: Vòng đời Báo động đỏ SOS - Cụ kích hoạt SOS và Con cháu bấm Tắt báo động', async ({ browser }) => {
+    // 0. Đảm bảo trạng thái ban đầu sạch, không bị kẹt ở Báo động đỏ từ lần test trước
+    await cleanupActiveSos();
+
     // -----------------------------------------------------------------
     // BƯỚC A: MỞ 2 MÁY CỦA CỤ (0123456789) VÀ CON CHÁU (test01@gmail.com)
     // -----------------------------------------------------------------
@@ -304,6 +324,12 @@ test.describe('Module 03: Màn hình Con cháu & Đồng bộ Realtime (Caregive
 
     // Con cháu bấm tắt báo động
     await resolveAlarmBtn.click();
+
+    // Nếu xuất hiện modal bảo vệ an toàn 2 lớp, bấm nút xác nhận trong modal
+    const confirmResolveBtn = pageCaregiver.getByTestId('confirm-resolve-button');
+    if (await confirmResolveBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
+      await confirmResolveBtn.click();
+    }
 
     // -----------------------------------------------------------------
     // BƯỚC E: KIỂM CHỨNG CẢ 2 BÊN ĐỒNG BỘ VỀ TRẠNG THÁI AN TOÀN (SAFE)

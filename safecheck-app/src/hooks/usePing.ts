@@ -36,8 +36,10 @@ export function usePing(params: {
   userProfile: UserProfile | null;
   onFeedback: (message: string) => void;
   onPlayChime: () => void;
+  onPingSuccess?: () => void;
 }): UsePingReturn {
-  const { systemState, linkedElderly, userProfile, onFeedback, onPlayChime } = params;
+  const { systemState, linkedElderly, userProfile, onFeedback, onPlayChime, onPingSuccess } =
+    params;
 
   const [pingCooldown, setPingCooldown] = useState<number>(0);
   const [conflictToast, setConflictToast] = useState<string | null>(null);
@@ -104,6 +106,7 @@ export function usePing(params: {
     const isTester = userProfile?.email?.toLowerCase() === 'test01@gmail.com';
     setPingCooldown(isTester ? 10 : 15 * 60);
     onFeedback('Đã phát chuông kiểm tra tới máy Cụ');
+    onPingSuccess?.();
   };
 
   return { pingCooldown, isPingAllowed, conflictToast, sendPing };

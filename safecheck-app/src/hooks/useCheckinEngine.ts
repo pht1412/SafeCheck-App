@@ -84,7 +84,7 @@ export function useCheckinEngine(params: {
 
     if (data && !error) {
       setSystemState(data.status as SystemState);
-      if (data.checkin_time) {
+      if (data.status === 'Safe' && data.checkin_time) {
         const time = new Date(data.checkin_time).toLocaleTimeString([], {
           hour: '2-digit',
           minute: '2-digit',
@@ -151,7 +151,7 @@ export function useCheckinEngine(params: {
 
             if (isMatch && newRow.status) {
               setSystemState(newRow.status as SystemState);
-              if (newRow.checkin_time) {
+              if (newRow.status === 'Safe' && newRow.checkin_time) {
                 const time = new Date(newRow.checkin_time).toLocaleTimeString([], {
                   hour: '2-digit',
                   minute: '2-digit',
@@ -220,6 +220,14 @@ export function useCheckinEngine(params: {
     }
 
     console.log('[useCheckinEngine] Điểm danh atomic v2 thành công:', res);
+    setSystemState('Safe');
+    const checkinDate = res.checkin_time ? new Date(res.checkin_time) : new Date();
+    setCheckInTime(
+      checkinDate.toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    );
     onFeedback('Điểm danh thành công, con cháu đã nhận được tin');
   };
 
