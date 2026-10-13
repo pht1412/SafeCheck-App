@@ -550,18 +550,31 @@ export default function CaregiverScreen({
 
                     {/* Nút test kiểm thử: ĐẶC BIỆT KHÓA CHẶT, CHỈ HIỂN THỊ KHI LÀ TESTER (test01@gmail.com) */}
                     {isTester && (
-                      <div className="pt-1">
+                      <div className="pt-1 flex flex-col gap-1.5">
+                        <button
+                          type="button"
+                          data-testid="test-cloud-push-btn"
+                          onClick={async () => {
+                            setPushStatusMessage('📡 Đang gửi lệnh từ Vercel Cloud sang Apple APNs...');
+                            const res = await pushNotificationService.testCloudPushNotification();
+                            setPushStatusMessage(res.success ? `✅ ${res.message}` : `❌ ${res.message}`);
+                          }}
+                          className="w-full py-2 bg-indigo-950/80 hover:bg-indigo-900 active:scale-95 text-indigo-200 font-mono text-[10px] rounded-xl border border-indigo-500/50 transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                        >
+                          <span>📡 [Tester] BẮN THỬ CHUÔNG THẬT TỪ CLOUD (APNs)</span>
+                        </button>
+
                         <button
                           type="button"
                           data-testid="test-push-btn"
                           onClick={async () => {
-                            setPushStatusMessage('Đang phát chuông thử nghiệm...');
+                            setPushStatusMessage('Đang phát chuông thử nghiệm local...');
                             const res = await pushNotificationService.testLocalNotification();
                             setPushStatusMessage(res.message);
                           }}
-                          className="w-full py-2 bg-slate-800/80 hover:bg-slate-700 active:scale-95 text-indigo-300 font-mono text-[10px] rounded-xl border border-indigo-500/30 transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                          className="w-full py-1.5 bg-slate-800/80 hover:bg-slate-700 active:scale-95 text-slate-300 font-mono text-[10px] rounded-xl border border-slate-600/30 transition-all flex items-center justify-center gap-1.5 shadow-sm"
                         >
-                          <span>🧪 [Tester] Bấm gửi thử 1 chuông thông báo</span>
+                          <span>🧪 [Tester] Thử chuông nội bộ (Local SW)</span>
                         </button>
                       </div>
                     )}

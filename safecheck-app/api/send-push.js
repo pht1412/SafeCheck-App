@@ -90,7 +90,74 @@ export default async function handler(req, res) {
   const clientKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
   const dbClient = createClient(SUPABASE_URL, clientKey);
 
-  const { sos_event_id } = req.body || {};
+  const { sos_event_id, test_mode } = req.body || {};
+
+  // 1.1. CHẾ ĐỘ TEST CLOUD PUSH TRỰC TIẾP (DIAGNOSTIC TEST)
+  if (test_mode) {
+    try {
+      const { data: subs, error: subErr } = await dbClient
+        .from('push_subscriptions')
+        .select('id, endpoint, p256dh, auth, platform, is_active')
+        .eq('user_id', user.id)
+        .eq('is_active', true);
+
+      if (subErr || !subs || subs.length === 0) {
+        return res.status(200).json({
+          success: false,
+          test_mode: true,
+          message: 'Không tìm thấy thiết bị nào đang kích hoạt (is_active: true) trong Database cho tài khoản này. Vui lòng bấm Bật cảnh báo nền để đăng ký thiết bị.',
+          total_subscriptions: 0,
+        });
+      }
+
+      const testPayload = JSON.stringify({
+        title: '🧪 SafeCheck - CHUÔNG THỬ NGHIỆM TỪ CLOUD',
+        body: 'Kết nối thành công qua Gateway! Điện thoại của bạn đã sẵn sàng nhận cảnh báo SOS.',
+        url: '/',
+        timestamp: Date.now(),
+        test: true,
+      });
+
+      const pushOptions = { TTL: 60, urgency: 'high' };
+      const results = [];
+
+      for (const sub of subs) {
+        try {
+          const pushSub = {
+            endpoint: sub.endpoint,
+            keys: { p256dh: sub.p256dh, auth: sub.auth },
+          };
+          const resp = await webpush.sendNotification(pushSub, testPayload, pushOptions);
+          results.push({
+            subscription_id: sub.id,
+            platform: sub.platform,
+            gateway: sub.endpoint.includes('apple') ? 'Apple APNs' : 'Google FCM',
+            status: 'accepted',
+            http_status: resp?.statusCode || 201,
+          });
+        } catch (pushErr) {
+          results.push({
+            subscription_id: sub.id,
+            platform: sub.platform,
+            status: 'failed',
+            http_status: pushErr.statusCode,
+            error: pushErr.message,
+          });
+        }
+      }
+
+      const successCount = results.filter((r) => r.status === 'accepted').length;
+      return res.status(200).json({
+        success: successCount > 0,
+        test_mode: true,
+        message: `Đã phát ${successCount}/${subs.length} thông báo thử nghiệm thành công từ Vercel Cloud!`,
+        deliveries: results,
+      });
+    } catch (testErr) {
+      return res.status(500).json({ error: 'Lỗi phát test push: ' + testErr.message });
+    }
+  }
+
   if (!sos_event_id) {
     return res.status(400).json({ error: 'Missing required field: sos_event_id' });
   }

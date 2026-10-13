@@ -260,4 +260,48 @@ export const pushNotificationService = {
       return { success: false, message: 'Lỗi phát thông báo: ' + errorMsg };
     }
   },
+
+  /**
+   * Bắn 1 thông báo thử nghiệm THẬT từ Cloud qua Apple APNs / Google Gateway
+   * Giúp kiểm chứng toàn diện luồng: Device -> Vercel Serverless -> Gateway -> iPhone Service Worker
+   */
+  async testCloudPushNotification(): Promise<{ success: boolean; message: string; details?: any }> {
+    try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        return { success: false, message: 'Vui lòng đăng nhập trước khi kiểm tra.' };
+      }
+
+      const response = await fetch('/api/send-push', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ test_mode: true }),
+      });
+
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok || !data?.success) {
+        return {
+          success: false,
+          message: data?.message || data?.error || `Máy chủ phản hồi mã ${response.status}`,
+          details: data,
+        };
+      }
+
+      return {
+        success: true,
+        message: data.message || 'Đã phát chuông thử nghiệm thật từ Vercel Cloud thành công!',
+        details: data,
+      };
+    } catch (err: unknown) {
+      const errorMsg = err instanceof Error ? err.message : String(err);
+      return { success: false, message: 'Lỗi kết nối tới máy chủ gửi push: ' + errorMsg };
+    }
+  },
 };
