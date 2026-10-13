@@ -4,10 +4,6 @@
 // ==============================================================================
 
 import { test, expect } from '@playwright/test';
-import { createClient } from '@supabase/supabase-js';
-
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://bozuzbmgnzzxyrioxzaa.supabase.co';
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_ZQjFvvLTLywvw4rKJIPU9Q_5iR_78Rr';
 
 test.describe('Module 13: Family Activity Audit & Coordination', () => {
   test.describe.configure({ mode: 'serial' });
