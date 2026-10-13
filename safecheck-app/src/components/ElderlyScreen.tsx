@@ -254,25 +254,39 @@ export default function ElderlyScreen({
               className="w-full bg-emerald-950/40 border-2 border-emerald-500/50 rounded-3xl p-6 text-center shadow-lg"
             >
               <p className="text-emerald-400 text-2xl font-black mb-2">HÔM NAY ĐÃ ỔN</p>
-              <p className="text-slate-300 text-base">
-                {checkInTime ? (
+              <div className="text-slate-300 text-base">
+                {resolvedTime ? (
                   <>
+                    <p>
+                      Đã tắt báo động an toàn lúc:{' '}
+                      <span className="font-bold text-white">{resolvedTime}</span>
+                    </p>
+                    {checkInTime && (
+                      <p className="text-xs text-slate-400 mt-1 font-normal">
+                        (Điểm danh sáng lúc: <span className="text-slate-300 font-semibold">{checkInTime}</span>)
+                      </p>
+                    )}
+                  </>
+                ) : checkInTime ? (
+                  <p>
                     Đã điểm danh lúc:{' '}
                     <span className="font-bold text-white">{checkInTime}</span>
-                  </>
+                  </p>
                 ) : (
-                  <>
+                  <p>
                     Đã xác nhận an toàn lúc:{' '}
                     <span className="font-bold text-white">
-                      {resolvedTime || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
-                  </>
+                  </p>
                 )}
-              </p>
+              </div>
               <p className="text-slate-400 text-xs mt-3">
-                {checkInTime
-                  ? 'Chúc cụ một ngày an lành!'
-                  : 'Báo động đã được tắt an toàn. Chúc cụ một ngày an lành!'}
+                {resolvedTime
+                  ? 'Báo động đã được giải quyết an toàn. Chúc cụ một ngày an lành!'
+                  : checkInTime
+                    ? 'Chúc cụ một ngày an lành!'
+                    : 'Đã xác nhận an toàn. Chúc cụ một ngày an lành!'}
               </p>
 
               {/* Nếu Cụ chưa từng bấm điểm danh hôm nay thì vẫn cho Cụ bấm để báo an tâm trọn vẹn */}

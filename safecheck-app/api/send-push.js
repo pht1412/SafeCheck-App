@@ -86,9 +86,19 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized: Invalid or expired token' });
   }
 
-  // Khởi tạo client gọi DB với Service Role Key để quản lý Lease & Fencing Token
-  const clientKey = SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY;
-  const dbClient = createClient(SUPABASE_URL, clientKey);
+  // Khởi tạo client gọi DB:
+  // Nếu có SUPABASE_SERVICE_ROLE_KEY thì dùng để bypass RLS hoàn toàn.
+  // Nếu không có, bắt buộc đính kèm Bearer token của caller để RLS cho phép truy vấn bảng sos_events và family_links!
+  const dbClient = SUPABASE_SERVICE_ROLE_KEY
+    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
+    : createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: false },
+        global: {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      });
 
   const { sos_event_id } = req.body || {};
 
@@ -242,6 +252,16 @@ export default async function handler(req, res) {
       });
 
       // 5.3. Gửi Web Push qua Gateway
+      // Kiểm tra tính hợp lệ cơ bản của khóa mã hóa (p256dh và auth)
+      if (!sub.endpoint || !sub.p256dh || !sub.auth || sub.p256dh.length < 20 || sub.auth.length < 5) {
+        return {
+          subscription_id: sub.subscription_id,
+          success: false,
+          status: 'skipped',
+          reason: 'INVALID_OR_TEST_SUBSCRIPTION_KEYS',
+        };
+      }
+
       const pushSubscription = {
         endpoint: sub.endpoint,
         keys: {
@@ -255,18 +275,20 @@ export default async function handler(req, res) {
 
         // Ghi nhận thành công 201 vào Sổ cái nếu có deliveryId
         if (deliveryId) {
-          await dbClient.rpc('complete_push_delivery_fenced', {
-            p_delivery_id: deliveryId,
-            p_worker_id: workerId,
-            p_fence_token: fenceToken,
-            p_status: 'accepted',
-            p_http_status: sendResponse?.statusCode || 201,
-            p_response_body: typeof sendResponse?.body === 'string' ? sendResponse.body : null,
-            p_error_message: null,
-            p_terminal_reason: null,
-          }).catch((completeErr) => {
+          try {
+            await dbClient.rpc('complete_push_delivery_fenced', {
+              p_delivery_id: deliveryId,
+              p_worker_id: workerId,
+              p_fence_token: fenceToken,
+              p_status: 'accepted',
+              p_http_status: sendResponse?.statusCode || 201,
+              p_response_body: typeof sendResponse?.body === 'string' ? sendResponse.body : null,
+              p_error_message: null,
+              p_terminal_reason: null,
+            });
+          } catch (completeErr) {
             console.warn('[Dispatcher] Cảnh báo ghi nhận thành công fenced:', completeErr);
-          });
+          }
         }
 
         return {
@@ -306,18 +328,20 @@ export default async function handler(req, res) {
 
         // Cập nhật kết quả thất bại/unknown với Fencing Token nếu có deliveryId
         if (deliveryId) {
-          await dbClient.rpc('complete_push_delivery_fenced', {
-            p_delivery_id: deliveryId,
-            p_worker_id: workerId,
-            p_fence_token: fenceToken,
-            p_status: targetStatus,
-            p_http_status: statusCode,
-            p_response_body: err.body || null,
-            p_error_message: err.message,
-            p_terminal_reason: terminalReason,
-          }).catch((completeErr) => {
+          try {
+            await dbClient.rpc('complete_push_delivery_fenced', {
+              p_delivery_id: deliveryId,
+              p_worker_id: workerId,
+              p_fence_token: fenceToken,
+              p_status: targetStatus,
+              p_http_status: statusCode,
+              p_response_body: err.body || null,
+              p_error_message: err.message,
+              p_terminal_reason: terminalReason,
+            });
+          } catch (completeErr) {
             console.warn('[Dispatcher] Lỗi ghi nhận thất bại fenced:', completeErr);
-          });
+          }
         }
 
         return {
@@ -351,13 +375,16 @@ export default async function handler(req, res) {
     }
 
     // 7. CẬP NHẬT AUDIT METRICS TRÊN sos_events
-    await dbClient
-      .from('sos_events')
-      .update({
-        push_dispatched_at: new Date().toISOString(),
-      })
-      .eq('id', sos_event_id)
-      .catch((e) => console.warn('[Dispatcher] Không thể cập nhật push_dispatched_at:', e));
+    try {
+      await dbClient
+        .from('sos_events')
+        .update({
+          push_dispatched_at: new Date().toISOString(),
+        })
+        .eq('id', sos_event_id);
+    } catch (e) {
+      console.warn('[Dispatcher] Không thể cập nhật push_dispatched_at:', e);
+    }
 
     const acceptedCount = dispatchResults.filter((r) => r.status === 'accepted').length;
 

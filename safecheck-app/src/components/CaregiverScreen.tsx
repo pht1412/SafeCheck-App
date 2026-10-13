@@ -229,16 +229,71 @@ export default function CaregiverScreen({
 
   useEffect(() => {
     setIsPushSupported(pushNotificationService.isPushSupported());
-    setPushPermission(pushNotificationService.getPermissionState());
+    const perm = pushNotificationService.getPermissionState();
+    setPushPermission(perm);
+    if (perm === 'granted') {
+      // Tự động kiểm tra và đồng bộ push subscription của iPhone lên Supabase
+      pushNotificationService.syncSubscriptionIfGranted().catch((e) => {
+        console.warn('[CaregiverScreen] Lỗi tự động sync push:', e);
+      });
+    }
   }, []);
 
   const handleEnablePush = async () => {
     setIsSubscribingPush(true);
     setPushStatusMessage(null);
-    const res = await pushNotificationService.subscribeToPush();
+    const res = await pushNotificationService.subscribeToPush(false);
     setPushPermission(pushNotificationService.getPermissionState());
     setPushStatusMessage(res.message);
     setIsSubscribingPush(false);
+  };
+
+  const handleRefreshPush = async () => {
+    setIsSubscribingPush(true);
+    setPushStatusMessage('Đang làm mới kết nối với Apple Push Service...');
+    const res = await pushNotificationService.subscribeToPush(true);
+    setPushPermission(pushNotificationService.getPermissionState());
+    setPushStatusMessage(res.message);
+    setIsSubscribingPush(false);
+  };
+
+  const handleTestCloudPush = async () => {
+    if (!linkedElderly?.id) {
+      setPushStatusMessage('Chưa kết nối với Cụ nào để test push.');
+      return;
+    }
+    setPushStatusMessage('Đang gọi Cloud /api/send-push gửi tới Apple APNs...');
+    try {
+      let sosId = activeSosEventId;
+      if (!sosId) {
+        const clientEventId = crypto.randomUUID();
+        const { data: rpcRes, error: rpcErr } = await supabase.rpc('create_sos_event_idempotent', {
+          p_elderly_id: linkedElderly.id,
+          p_client_event_id: clientEventId,
+          p_trigger_source: 'button',
+        });
+        if (rpcErr) {
+          setPushStatusMessage('Lỗi tạo sự kiện SOS test: ' + rpcErr.message);
+          return;
+        }
+        sosId = rpcRes?.sos_event_id;
+      }
+
+      if (!sosId) {
+        setPushStatusMessage('Không thể tạo SOS event test.');
+        return;
+      }
+
+      const res = await pushNotificationService.sendEmergencyPush(sosId);
+      if (res.success) {
+        const details = res.details as any;
+        setPushStatusMessage(`✅ Cloud Push thành công! Đã phát tới ${details?.accepted_count ?? 0}/${details?.total_subscriptions ?? 0} thiết bị.`);
+      } else {
+        setPushStatusMessage(`❌ Lỗi gửi Cloud Push: ${res.message}`);
+      }
+    } catch (err: any) {
+      setPushStatusMessage(`❌ Ngoại lệ: ${err?.message || String(err)}`);
+    }
   };
 
   const loadContacts = async () => {
@@ -548,23 +603,44 @@ export default function CaregiverScreen({
                       </div>
                     </div>
 
-                    {/* Nút test kiểm thử: ĐẶC BIỆT KHÓA CHẶT, CHỈ HIỂN THỊ KHI LÀ TESTER (test01@gmail.com) */}
-                    {isTester && (
-                      <div className="pt-1">
-                        <button
-                          type="button"
-                          data-testid="test-push-btn"
-                          onClick={async () => {
-                            setPushStatusMessage('Đang phát chuông thử nghiệm...');
-                            const res = await pushNotificationService.testLocalNotification();
-                            setPushStatusMessage(res.message);
-                          }}
-                          className="w-full py-2 bg-slate-800/80 hover:bg-slate-700 active:scale-95 text-indigo-300 font-mono text-[10px] rounded-xl border border-indigo-500/30 transition-all flex items-center justify-center gap-1.5 shadow-sm"
-                        >
-                          <span>🧪 [Tester] Bấm gửi thử 1 chuông thông báo</span>
-                        </button>
-                      </div>
-                    )}
+                    {/* Nút làm mới kết nối thông báo & Nút test kiểm thử */}
+                    <div className="pt-1 flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleRefreshPush}
+                        disabled={isSubscribingPush}
+                        className="w-full py-2 bg-slate-800/80 hover:bg-slate-700 active:scale-95 text-slate-300 text-[11px] font-semibold rounded-xl border border-slate-700 transition-all flex items-center justify-center gap-1.5 shadow-sm"
+                      >
+                        <span>🔄 Đồng bộ lại kết nối thông báo (Refresh Push)</span>
+                      </button>
+
+                      {isTester && (
+                        <div className="grid grid-cols-2 gap-1.5 mt-1">
+                          <button
+                            type="button"
+                            data-testid="test-push-btn"
+                            onClick={async () => {
+                              setPushStatusMessage('Đang phát chuông thử nghiệm cục bộ...');
+                              const res = await pushNotificationService.testLocalNotification();
+                              setPushStatusMessage(res.message);
+                            }}
+                            className="py-2 bg-slate-800/80 hover:bg-slate-700 active:scale-95 text-indigo-300 font-mono text-[10px] rounded-xl border border-indigo-500/30 transition-all flex items-center justify-center gap-1 shadow-sm"
+                          >
+                            <span>🧪 Chuông Local</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            data-testid="test-cloud-push-btn"
+                            onClick={handleTestCloudPush}
+                            disabled={isSubscribingPush}
+                            className="py-2 bg-rose-950/50 hover:bg-rose-900/60 active:scale-95 text-rose-300 font-mono text-[10px] rounded-xl border border-rose-500/40 transition-all flex items-center justify-center gap-1 shadow-sm"
+                          >
+                            <span>📡 Bắn Cloud (APNs)</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : pushPermission === 'denied' ? (
                   <p className="text-[11px] text-rose-300/90 leading-relaxed">

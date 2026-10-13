@@ -87,8 +87,9 @@ export const pushNotificationService = {
   /**
    * Đăng ký Web Push Notification (bắt buộc từ Explicit User Gesture)
    * User_id được lấy tự động từ authenticated Supabase session, không nhận từ tham số UI.
+   * @param forceRefresh: Nếu true, hủy subscription cũ và đăng ký lại từ đầu với VAPID key hiện tại
    */
-  async subscribeToPush(): Promise<{ success: boolean; message: string; subscription?: PushSubscription }> {
+  async subscribeToPush(forceRefresh = false): Promise<{ success: boolean; message: string; subscription?: PushSubscription }> {
     if (!this.isPushSupported()) {
       return { success: false, message: 'Trình duyệt không hỗ trợ Web Push Notifications.' };
     }
@@ -119,6 +120,15 @@ export const pushNotificationService = {
       // 3. Đợi Service Worker sẵn sàng và đăng ký với PushManager
       const registration = await navigator.serviceWorker.ready;
       let subscription = await registration.pushManager.getSubscription();
+
+      if (forceRefresh && subscription) {
+        try {
+          await subscription.unsubscribe();
+          subscription = null;
+        } catch (unsubErr) {
+          console.warn('[PushNotification] Không thể unsubscribe subscription cũ:', unsubErr);
+        }
+      }
 
       if (!subscription) {
         const applicationServerKey = urlBase64ToUint8Array(VAPID_PUBLIC_KEY);
@@ -165,6 +175,23 @@ export const pushNotificationService = {
       const errorMsg = err instanceof Error ? err.message : String(err);
       console.error('[PushNotification] Lỗi quy trình subscribe:', err);
       return { success: false, message: 'Lỗi đăng ký thông báo: ' + errorMsg };
+    }
+  },
+
+  /**
+   * Tự động đồng bộ Push Subscription lên database nếu trình duyệt đã cấp quyền trước đó.
+   * Đảm bảo subscription luôn gắn đúng với user_id của tài khoản hiện tại.
+   */
+  async syncSubscriptionIfGranted(): Promise<boolean> {
+    if (!this.isPushSupported()) return false;
+    if (this.getPermissionState() !== 'granted') return false;
+
+    try {
+      const res = await this.subscribeToPush(false);
+      return res.success;
+    } catch (err) {
+      console.warn('[PushNotification] Tự động sync subscription thất bại:', err);
+      return false;
     }
   },
 
