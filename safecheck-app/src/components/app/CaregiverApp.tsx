@@ -144,6 +144,8 @@ export default function CaregiverApp({ userProfile, signOut }: CaregiverAppProps
       caregiverName={userProfile.full_name}
       linkedElderly={linkedElderly}
       activeSosEventId={sos.activeSosEventId}
+      sosTimeString={sos.sosTimeString}
+      sosElapsedTime={sos.sosElapsedTime}
       isTester={userProfile.email?.toLowerCase() === 'test01@gmail.com'}
       conflictToast={ping.conflictToast ?? sos.conflictToast}
       onSendPing={ping.sendPing}

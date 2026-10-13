@@ -13,6 +13,10 @@ export interface UseSosReturn {
   sosCountdown: number | null;
   isSirenMuted: boolean;
   activeSosEventId: string | null;
+  sosCreatedAt: string | null;
+  sosStartTime: number | null;
+  sosTimeString: string | null;
+  sosElapsedTime: string | null;
   acknowledgements: SOSAcknowledgement[];
   escalationDeadline: string | null;
   remainingEscalationSeconds: number | null;
@@ -69,6 +73,7 @@ export function useSos(params: {
   const [sosCountdown, setSosCountdown] = useState<number | null>(null);
   const [isSirenMuted, setIsSirenMuted] = useState<boolean>(false);
   const [activeSosEventId, setActiveSosEventId] = useState<string | null>(null);
+  const [sosCreatedAt, setSosCreatedAt] = useState<string | null>(null);
   const [sosStartTime, setSosStartTime] = useState<number | null>(null);
   const [hasServerAck, setHasServerAck] = useState<boolean>(false);
   const [now, setNow] = useState<number>(() => Date.now()); // lazy initializer — avoids calling Date.now during render
@@ -146,14 +151,18 @@ export function useSos(params: {
             setActiveSosEventId(data.id);
             setEscalationDeadline(data.escalation_deadline || null);
             setIsEscalated(Boolean(data.escalated_at));
-            if (!sosStartTime) {
-              setSosStartTime(new Date(data.created_at).getTime());
+            if (data.created_at) {
+              setSosCreatedAt(data.created_at);
+              if (!sosStartTime) {
+                setSosStartTime(new Date(data.created_at).getTime());
+              }
             }
           }
         });
     } else {
       /* eslint-disable react-hooks/set-state-in-effect */
       setActiveSosEventId(null);
+      setSosCreatedAt(null);
       setSosStartTime(null);
       setHasServerAck(false);
       setAcknowledgements([]);
@@ -199,6 +208,10 @@ export function useSos(params: {
             } else if (newRow.status === 'active') {
               setSystemState('Emergency');
               setActiveSosEventId(newRow.id || null);
+              if (newRow.created_at) {
+                setSosCreatedAt(newRow.created_at);
+                setSosStartTime(new Date(newRow.created_at).getTime());
+              }
               if (newRow.escalation_deadline) setEscalationDeadline(newRow.escalation_deadline);
               if (newRow.escalated_at) setIsEscalated(true);
               setIsSirenMuted(false);
@@ -447,11 +460,39 @@ export function useSos(params: {
 
   const toggleMuteSiren = () => setIsSirenMuted((prev) => !prev);
 
+  // ─── J. Thời gian SOS & Thời gian đã trôi qua (Live Elapsed Timer) ──────────
+  const sosTimeString = sosCreatedAt
+    ? new Date(sosCreatedAt).toLocaleTimeString([], {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      })
+    : null;
+
+  const elapsedSeconds =
+    sosStartTime && systemState === 'Emergency'
+      ? Math.max(0, Math.floor((now - sosStartTime) / 1000))
+      : 0;
+
+  const formatElapsed = (sec: number): string => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    if (m === 0) return `${s} giây trước`;
+    return `${m} phút ${s.toString().padStart(2, '0')} giây trước`;
+  };
+
+  const sosElapsedTime =
+    sosStartTime && systemState === 'Emergency' ? formatElapsed(elapsedSeconds) : null;
+
   return {
     sosHolding,
     sosCountdown,
     isSirenMuted,
     activeSosEventId,
+    sosCreatedAt,
+    sosStartTime,
+    sosTimeString,
+    sosElapsedTime,
     acknowledgements,
     escalationDeadline,
     remainingEscalationSeconds,

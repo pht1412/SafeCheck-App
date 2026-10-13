@@ -29,6 +29,8 @@ interface CaregiverScreenProps {
   caregiverName?: string;
   linkedElderly?: LinkedElderly | null;
   activeSosEventId?: string | null;
+  sosTimeString?: string | null;
+  sosElapsedTime?: string | null;
   isTester?: boolean;
   conflictToast?: string | null;
   onSendPing: () => void;
@@ -51,6 +53,8 @@ export default function CaregiverScreen({
   caregiverName,
   linkedElderly,
   activeSosEventId,
+  sosTimeString,
+  sosElapsedTime,
   isTester = false,
   conflictToast,
   onSendPing,
@@ -109,14 +113,61 @@ export default function CaregiverScreen({
   );
 
   const handleAcknowledge = async () => {
-    if (!activeSosEventId) return;
+    let targetSosId = activeSosEventId;
+    // Fallback: nếu activeSosEventId chưa kịp truyền xuống từ hook cha
+    if (!targetSosId && linkedElderly?.id) {
+      const { data: latestActiveEvent } = await supabase
+        .from('sos_events')
+        .select('id')
+        .eq('elderly_id', linkedElderly.id)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      targetSosId = latestActiveEvent?.id || null;
+    }
+
+    if (!targetSosId) {
+      setAckError('Chưa xác định được ID ca cấp cứu. Hãy thử lại.');
+      return;
+    }
+
     setIsAcknowledging(true);
     setAckError(null);
-    const res = await sosAcknowledgementService.acknowledgeSOS(activeSosEventId, 'app_click');
-    if (!res.success) {
-      setAckError(res.error || 'Không thể tiếp nhận');
+    try {
+      const res = await sosAcknowledgementService.acknowledgeSOS(targetSosId, 'app_click');
+      if (!res.success) {
+        setAckError(res.error || 'Không thể tiếp nhận');
+        setIsAcknowledging(false);
+        return;
+      }
+
+      // Optimistic Update: Thêm ngay bản ghi của chính mình vào state acknowledgements
+      // Giúp nút đổi sang badge "BẠN ĐÃ TIẾP NHẬN" tức thì 0ms, không phụ thuộc vào WebSocket delay
+      const myAck: SOSAcknowledgement = {
+        id: res.data?.id || crypto.randomUUID(),
+        sos_event_id: targetSosId,
+        caregiver_id: currentUserId || res.data?.caregiver_id || '',
+        caregiver_name: caregiverName || 'Bạn',
+        acknowledged_at: res.data?.acknowledged_at || new Date().toISOString(),
+        channel: 'app_click',
+      };
+
+      setAcknowledgements((prev) => {
+        const alreadyInList = prev.some((a) => a.caregiver_id === myAck.caregiver_id);
+        return alreadyInList ? prev : [myAck, ...prev];
+      });
+
+      // Kéo lại toàn bộ danh sách mới nhất từ server
+      const refreshed = await sosAcknowledgementService.getAcknowledgements(targetSosId);
+      if (refreshed.data && refreshed.data.length > 0) {
+        setAcknowledgements(refreshed.data);
+      }
+    } catch (err: any) {
+      setAckError(err.message || 'Lỗi khi tiếp nhận cứu hộ');
+    } finally {
+      setIsAcknowledging(false);
     }
-    setIsAcknowledging(false);
   };
 
   // State quản lý danh bạ cứu hộ
@@ -343,9 +394,20 @@ export default function CaregiverScreen({
                       BÁO ĐỘNG KHẨN CẤP TỪ {elderlyName.toUpperCase()}!
                     </h3>
                   </div>
-                  <p className="text-rose-300 text-xs mb-3 font-medium">
+                  <p className="text-rose-300 text-xs mb-2 font-medium">
                     {elderlyName} vừa kích hoạt SOS cần sự giúp đỡ ngay lập tức!
                   </p>
+
+                  {/* Mốc thời gian kích hoạt SOS & Đồng hồ đếm thời gian trôi qua */}
+                  <div className="flex items-center justify-center gap-2 mb-3 py-1.5 px-3 bg-rose-900/60 rounded-xl border border-rose-500/40 text-[11px] font-mono text-rose-200">
+                    <span>⏰ Lúc: <strong className="text-white font-bold">{sosTimeString || 'Vừa xong'}</strong></span>
+                    {sosElapsedTime && (
+                      <>
+                        <span className="opacity-60">•</span>
+                        <span>⏳ <strong className="text-amber-300 font-bold">{sosElapsedTime}</strong></span>
+                      </>
+                    )}
+                  </div>
 
                   <div className="flex flex-col gap-2.5">
                     {/* Nút hoặc Badge Xác nhận Tiếp nhận cứu hộ */}

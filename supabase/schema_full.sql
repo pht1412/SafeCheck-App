@@ -3534,3 +3534,15 @@ $$;
 REVOKE ALL ON FUNCTION public.escalate_sos_event_atomic(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.escalate_sos_event_atomic(UUID) TO authenticated, service_role;
 
+-- 4. KÍCH HOẠT SUPABASE REALTIME CHO sos_acknowledgements
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables 
+    WHERE pubname = 'supabase_realtime' AND tablename = 'sos_acknowledgements'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.sos_acknowledgements;
+  END IF;
+END $$;
+
+

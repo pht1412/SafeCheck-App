@@ -100,6 +100,7 @@ export default function ElderlyApp({ userProfile }: ElderlyAppProps) {
       fallbackReason={sos.fallbackReason}
       acknowledgements={sos.acknowledgements}
       remainingEscalationSeconds={sos.remainingEscalationSeconds}
+      sosTimeString={sos.sosTimeString}
       primaryCaregiverName={primaryCaregiver?.name}
       primaryCaregiverPhone={primaryCaregiver?.phone}
       onCheckIn={performCheckIn}

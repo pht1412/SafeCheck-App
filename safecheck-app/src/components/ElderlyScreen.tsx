@@ -17,6 +17,7 @@ interface ElderlyScreenProps {
   fallbackReason?: 'offline' | 'sla_timeout' | null;
   acknowledgements?: SOSAcknowledgement[];
   remainingEscalationSeconds?: number | null;
+  sosTimeString?: string | null;
   primaryCaregiverName?: string;
   primaryCaregiverPhone?: string;
   onCheckIn: () => void;
@@ -41,6 +42,7 @@ export default function ElderlyScreen({
   fallbackReason = 'offline',
   acknowledgements = [],
   remainingEscalationSeconds = null,
+  sosTimeString,
   primaryCaregiverName,
   primaryCaregiverPhone,
   onCheckIn,
@@ -143,9 +145,14 @@ export default function ElderlyScreen({
                 <div className="w-full bg-rose-950/90 border-4 border-rose-600 rounded-3xl p-5 text-center shadow-2xl">
                   <div className="text-5xl mb-2 animate-bounce">🚨</div>
                   <p className="text-white text-2xl font-black mb-1">ĐANG BÁO ĐỘNG ĐỎ</p>
-                  <p className="text-rose-200 text-sm mb-3">
+                  <p className="text-rose-200 text-sm mb-1">
                     Đã phát còi và báo động khẩn cấp tới con cháu!
                   </p>
+                  {sosTimeString && (
+                    <p className="text-[11px] font-mono text-rose-300/80 mb-3">
+                      ⏰ Lúc: {sosTimeString}
+                    </p>
+                  )}
 
                   {/* 1. Banner an tâm trung thực khi con cháu đã xác nhận tiếp nhận */}
                   {acknowledgements && acknowledgements.length > 0 && (
