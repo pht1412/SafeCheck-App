@@ -148,6 +148,8 @@ export const pushNotificationService = {
           auth,
           platform: detectPlatform(),
           user_agent: navigator.userAgent,
+          is_active: true,
+          revoked_at: null,
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'endpoint' }

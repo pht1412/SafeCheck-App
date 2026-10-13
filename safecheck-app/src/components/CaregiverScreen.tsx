@@ -4,6 +4,7 @@ import type { ConnectionHealth } from '../hooks/useDeviceStatus';
 import { EmergencyContactsModal } from './EmergencyContactsModal';
 import { EmergencyContactsSettings } from './EmergencyContactsSettings';
 import { ScheduleSettingsModal } from './ScheduleSettingsModal';
+import { FamilyActivityModal } from './FamilyActivityModal';
 import { emergencyContactsService } from '../services/emergencyContactsService';
 import { pushNotificationService } from '../services/pushNotificationService';
 import { checkinScheduleService, formatTimeDisplay } from '../services/checkinScheduleService';
@@ -76,6 +77,7 @@ export default function CaregiverScreen({
   const [isAcknowledging, setIsAcknowledging] = useState<boolean>(false);
   const [ackError, setAckError] = useState<string | null>(null);
   const [isResolveConfirmOpen, setIsResolveConfirmOpen] = useState<boolean>(false);
+  const [isActivityModalOpen, setIsActivityModalOpen] = useState<boolean>(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   // Lấy current user ID để xác định con cháu hiện tại đã nhận tin hay chưa
@@ -456,6 +458,7 @@ export default function CaregiverScreen({
                           >
                             <span className="font-semibold text-emerald-300">
                               ✓ {ack.caregiver_name || 'Người thân'}
+                              {ack.relationship ? ` - ${ack.relationship}` : ''}
                             </span>
                             <span className="text-slate-400 font-mono text-[10px]">
                               {new Date(ack.acknowledged_at).toLocaleTimeString([], {
@@ -606,12 +609,12 @@ export default function CaregiverScreen({
                 {/* Trạng thái kết nối suy luận từ ConnectionHealth */}
                 <div className="flex items-center gap-1.5">
                   <span className={`w-2 h-2 rounded-full ${connectionHealth === 'healthy'
-                      ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'
-                      : connectionHealth === 'connecting'
-                        ? 'bg-amber-400 animate-ping'
-                        : connectionHealth === 'reconnecting'
-                          ? 'bg-amber-500 animate-pulse'
-                          : 'bg-rose-500 animate-pulse'
+                    ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.6)]'
+                    : connectionHealth === 'connecting'
+                      ? 'bg-amber-400 animate-ping'
+                      : connectionHealth === 'reconnecting'
+                        ? 'bg-amber-500 animate-pulse'
+                        : 'bg-rose-500 animate-pulse'
                     }`} />
                   <span>Kết nối:</span>
                   <strong className={
@@ -677,6 +680,24 @@ export default function CaregiverScreen({
                     </strong>
                   </div>
                 </div>
+              </div>
+
+              {/* Nút mở Nhật ký Hoạt động & Con cháu */}
+              <div className="mb-3">
+                <button
+                  type="button"
+                  data-testid="open-activity-modal-btn"
+                  onClick={() => setIsActivityModalOpen(true)}
+                  className="w-full py-3 px-4 bg-indigo-950/40 hover:bg-indigo-900/50 border border-indigo-500/40 text-indigo-200 rounded-2xl text-xs font-bold flex items-center justify-between transition-all shadow-md active:scale-95"
+                >
+                  <span className="flex items-center gap-2">
+                    <span className="text-base">📋</span>
+                    <span>Nhật ký Hoạt động & Con cháu</span>
+                  </span>
+                  <span className="text-[11px] px-2.5 py-0.5 rounded-full bg-indigo-900/60 border border-indigo-500/30 text-indigo-300 font-semibold">
+                    Xem chi tiết ➔
+                  </span>
+                </button>
               </div>
 
               {/* Nút bật/tắt quản lý danh bạ cứu hộ */}

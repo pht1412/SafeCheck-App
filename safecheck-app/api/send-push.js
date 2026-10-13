@@ -205,29 +205,27 @@ export default async function handler(req, res) {
         p_lease_duration_seconds: 15,
       });
 
+      let deliveryId = null;
+      let fenceToken = null;
+      let attemptCount = 1;
+      let isRetry = false;
+
       if (leaseErr) {
-        console.error(`[Dispatcher] Lỗi claim lease cho sub ${sub.subscription_id}:`, leaseErr);
-        return {
-          subscription_id: sub.subscription_id,
-          success: false,
-          status: 'error_claiming_lease',
-          error: leaseErr.message,
-        };
+        console.warn(`[Dispatcher] Cảnh báo claim lease cho sub ${sub.subscription_id} thất bại, kích hoạt cơ chế gửi trực tiếp cứu mạng:`, leaseErr.message);
+      } else if (leaseResult) {
+        if (!leaseResult.can_send) {
+          return {
+            subscription_id: sub.subscription_id,
+            success: false,
+            status: 'skipped',
+            reason: leaseResult.reason || 'LEASE_DENIED',
+          };
+        }
+        deliveryId = leaseResult.delivery_id;
+        fenceToken = leaseResult.fence_token;
+        attemptCount = leaseResult.attempt_count || 1;
+        isRetry = attemptCount > 1;
       }
-
-      if (!leaseResult || !leaseResult.can_send) {
-        return {
-          subscription_id: sub.subscription_id,
-          success: false,
-          status: 'skipped',
-          reason: leaseResult?.reason || 'LEASE_DENIED',
-        };
-      }
-
-      const deliveryId = leaseResult.delivery_id;
-      const fenceToken = leaseResult.fence_token;
-      const attemptCount = leaseResult.attempt_count || 1;
-      const isRetry = attemptCount > 1;
 
       // 5.2. Tạo Payload gắn nhãn chẩn đoán và schema_version cho từng subscription
       const subPayload = JSON.stringify({
@@ -254,17 +252,21 @@ export default async function handler(req, res) {
       try {
         const sendResponse = await sendWithTimeout(pushSubscription, subPayload, pushOptions, 6000);
 
-        // Ghi nhận thành công 201 vào Sổ cái
-        await dbClient.rpc('complete_push_delivery_fenced', {
-          p_delivery_id: deliveryId,
-          p_worker_id: workerId,
-          p_fence_token: fenceToken,
-          p_status: 'accepted',
-          p_http_status: sendResponse?.statusCode || 201,
-          p_response_body: typeof sendResponse?.body === 'string' ? sendResponse.body : null,
-          p_error_message: null,
-          p_terminal_reason: null,
-        });
+        // Ghi nhận thành công 201 vào Sổ cái nếu có deliveryId
+        if (deliveryId) {
+          await dbClient.rpc('complete_push_delivery_fenced', {
+            p_delivery_id: deliveryId,
+            p_worker_id: workerId,
+            p_fence_token: fenceToken,
+            p_status: 'accepted',
+            p_http_status: sendResponse?.statusCode || 201,
+            p_response_body: typeof sendResponse?.body === 'string' ? sendResponse.body : null,
+            p_error_message: null,
+            p_terminal_reason: null,
+          }).catch((completeErr) => {
+            console.warn('[Dispatcher] Cảnh báo ghi nhận thành công fenced:', completeErr);
+          });
+        }
 
         return {
           subscription_id: sub.subscription_id,
@@ -301,19 +303,21 @@ export default async function handler(req, res) {
           terminalReason = 'NETWORK_ERROR_UNKNOWN_RESULT';
         }
 
-        // Cập nhật kết quả thất bại/unknown với Fencing Token
-        await dbClient.rpc('complete_push_delivery_fenced', {
-          p_delivery_id: deliveryId,
-          p_worker_id: workerId,
-          p_fence_token: fenceToken,
-          p_status: targetStatus,
-          p_http_status: statusCode,
-          p_response_body: err.body || null,
-          p_error_message: err.message,
-          p_terminal_reason: terminalReason,
-        }).catch((completeErr) => {
-          console.error('[Dispatcher] Lỗi ghi nhận thất bại fenced:', completeErr);
-        });
+        // Cập nhật kết quả thất bại/unknown với Fencing Token nếu có deliveryId
+        if (deliveryId) {
+          await dbClient.rpc('complete_push_delivery_fenced', {
+            p_delivery_id: deliveryId,
+            p_worker_id: workerId,
+            p_fence_token: fenceToken,
+            p_status: targetStatus,
+            p_http_status: statusCode,
+            p_response_body: err.body || null,
+            p_error_message: err.message,
+            p_terminal_reason: terminalReason,
+          }).catch((completeErr) => {
+            console.warn('[Dispatcher] Lỗi ghi nhận thất bại fenced:', completeErr);
+          });
+        }
 
         return {
           subscription_id: sub.subscription_id,

@@ -14,6 +14,8 @@
 --   - 20260921000003_fix_check_overdue_routine_v2.sql
 --   - 20260922000000_resilient_push_deliveries.sql
 --   - 20260923000000_sos_escalation_schema.sql
+--   - 20260924000000_enable_realtime_acknowledgements.sql
+--   - 20260925000000_fix_push_rpc_permissions.sql
 --
 -- Dành cho việc Bàn giao (Handoff) hoặc Khởi tạo dự án mới từ con số 0.
 -- Không cần phải chạy từng câu lệnh lẻ. Chỉ cần dán toàn bộ file này vào Supabase SQL Editor.
@@ -3534,7 +3536,17 @@ $$;
 REVOKE ALL ON FUNCTION public.escalate_sos_event_atomic(UUID) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.escalate_sos_event_atomic(UUID) TO authenticated, service_role;
 
--- 4. KÍCH HOẠT SUPABASE REALTIME CHO sos_acknowledgements
+
+-- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+-- MIGRATION: 20260924000000_enable_realtime_acknowledgements.sql
+-- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+-- ==============================================================================
+-- Migration: 20260924000000_enable_realtime_acknowledgements.sql
+-- Kích hoạt Supabase Realtime cho bảng sos_acknowledgements
+-- Giúp đồng bộ tức thì danh sách người thân tiếp nhận cứu hộ giữa Cụ và Con cháu
+-- ==============================================================================
+
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -3545,4 +3557,20 @@ BEGIN
   END IF;
 END $$;
 
+
+-- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+-- MIGRATION: 20260925000000_fix_push_rpc_permissions.sql
+-- >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+
+-- ==============================================================================
+-- Migration: 20260925000000_fix_push_rpc_permissions.sql
+-- Mô tả: Cấp quyền thực thi các RPC phân phát Web Push cho authenticated và anon,
+--        đảm bảo Vercel Dispatcher hoạt động tin cậy 100% ngay cả khi môi trường
+--        chỉ có Anon Key, không bị lỗi Permission Denied chặn phát thông báo khẩn cấp.
+-- ==============================================================================
+
+GRANT EXECUTE ON FUNCTION public.get_caregiver_push_subscriptions(UUID) TO authenticated, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.claim_push_delivery_lease(UUID, UUID, UUID, TEXT, TEXT, INT) TO authenticated, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.complete_push_delivery_fenced(UUID, TEXT, BIGINT, VARCHAR, INT, TEXT, TEXT, TEXT) TO authenticated, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.deactivate_push_subscription(UUID) TO authenticated, anon, service_role;
 

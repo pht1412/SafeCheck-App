@@ -11,6 +11,7 @@ export interface SOSAcknowledgement {
   sos_event_id: string;
   caregiver_id: string;
   caregiver_name?: string;
+  relationship?: string;
   acknowledged_at: string;
   channel: string;
   client_metadata?: Record<string, any>;
@@ -68,18 +69,27 @@ export const sosAcknowledgementService = {
         return { data: [] };
       }
 
-      // Lấy danh sách tên người thân từ profiles
+      // Lấy danh sách tên người thân từ profiles & mối quan hệ từ family_links
       const caregiverIds = acks.map((a) => a.caregiver_id);
-      const { data: profiles } = await supabase
-        .from('profiles')
-        .select('id, full_name')
-        .in('id', caregiverIds);
+      const [{ data: profiles }, { data: links }] = await Promise.all([
+        supabase
+          .from('profiles')
+          .select('id, full_name')
+          .in('id', caregiverIds),
+        supabase
+          .from('family_links')
+          .select('caregiver_id, relationship')
+          .in('caregiver_id', caregiverIds)
+          .eq('status', 'accepted'),
+      ]);
 
       const profileMap = new Map((profiles || []).map((p) => [p.id, p.full_name]));
+      const linkMap = new Map((links || []).map((l) => [l.caregiver_id, l.relationship]));
 
       const enrichedAcks: SOSAcknowledgement[] = acks.map((a) => ({
         ...a,
         caregiver_name: profileMap.get(a.caregiver_id) || 'Người thân',
+        relationship: linkMap.get(a.caregiver_id) || 'Người thân',
       }));
 
       return { data: enrichedAcks };
