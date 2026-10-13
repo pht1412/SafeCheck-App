@@ -47,6 +47,7 @@ export default function ElderlyApp({ userProfile }: ElderlyAppProps) {
     systemState,
     setSystemState,
     checkInTime,
+    resolvedTime,
     checkinSchedule,
     isLoading,
     performCheckIn,
@@ -88,6 +89,7 @@ export default function ElderlyApp({ userProfile }: ElderlyAppProps) {
     <ElderlyScreen
       systemState={systemState}
       checkInTime={checkInTime}
+      resolvedTime={resolvedTime}
       checkinStart={checkinSchedule?.checkin_start}
       batteryLevel={batteryLevel}
       isCharging={isCharging}

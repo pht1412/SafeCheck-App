@@ -12,6 +12,7 @@ export interface UseCheckinEngineReturn {
   /** Exposed để useSos có thể mutate state (Emergency trigger, resolve). */
   setSystemState: Dispatch<SetStateAction<SystemState>>;
   checkInTime: string | null;
+  resolvedTime: string | null;
   checkinSchedule: CheckinSchedule | null;
   isLoading: boolean;
   realtimeStatus: RealtimeStatus;
@@ -44,6 +45,7 @@ export function useCheckinEngine(params: {
 
   const [systemState, setSystemState] = useState<SystemState>('Waiting');
   const [checkInTime, setCheckInTime] = useState<string | null>(null);
+  const [resolvedTime, setResolvedTime] = useState<string | null>(null);
   const [checkinSchedule, setCheckinSchedule] = useState<CheckinSchedule | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [realtimeStatus, setRealtimeStatus] = useState<RealtimeStatus>('connecting');
@@ -93,9 +95,20 @@ export function useCheckinEngine(params: {
       } else {
         setCheckInTime(null);
       }
+
+      if (data.resolved_at) {
+        const rTime = new Date(data.resolved_at).toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+        });
+        setResolvedTime(rTime);
+      } else {
+        setResolvedTime(null);
+      }
     } else {
       setSystemState('Waiting');
       setCheckInTime(null);
+      setResolvedTime(null);
     }
   };
 
@@ -140,6 +153,7 @@ export function useCheckinEngine(params: {
             log_date?: string;
             status?: string;
             checkin_time?: string;
+            resolved_at?: string;
             family_code?: string;
             elderly_id?: string;
           } | undefined;
@@ -159,6 +173,16 @@ export function useCheckinEngine(params: {
                 setCheckInTime(time);
               } else {
                 setCheckInTime(null);
+              }
+
+              if (newRow.resolved_at) {
+                const rTime = new Date(newRow.resolved_at).toLocaleTimeString([], {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                });
+                setResolvedTime(rTime);
+              } else if (newRow.status !== 'Safe') {
+                setResolvedTime(null);
               }
             }
           }
@@ -235,6 +259,7 @@ export function useCheckinEngine(params: {
     systemState,
     setSystemState,
     checkInTime,
+    resolvedTime,
     checkinSchedule,
     isLoading,
     realtimeStatus,

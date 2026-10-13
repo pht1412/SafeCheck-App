@@ -5,6 +5,7 @@ import CellularFallbackCard from './CellularFallbackCard';
 interface ElderlyScreenProps {
   systemState: SystemState;
   checkInTime: string | null;
+  resolvedTime?: string | null;
   checkinStart?: string | null;
   batteryLevel: number | null;
   isCharging?: boolean;
@@ -30,6 +31,7 @@ interface ElderlyScreenProps {
 export default function ElderlyScreen({
   systemState,
   checkInTime,
+  resolvedTime,
   checkinStart,
   batteryLevel,
   isCharging = false,
@@ -253,12 +255,42 @@ export default function ElderlyScreen({
             >
               <p className="text-emerald-400 text-2xl font-black mb-2">HÔM NAY ĐÃ ỔN</p>
               <p className="text-slate-300 text-base">
-                Đã điểm danh lúc:{' '}
-                <span className="font-bold text-white">
-                  {checkInTime || 'Vừa xong'}
-                </span>
+                {checkInTime ? (
+                  <>
+                    Đã điểm danh lúc:{' '}
+                    <span className="font-bold text-white">{checkInTime}</span>
+                  </>
+                ) : (
+                  <>
+                    Đã xác nhận an toàn lúc:{' '}
+                    <span className="font-bold text-white">
+                      {resolvedTime || new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </>
+                )}
               </p>
-              <p className="text-slate-400 text-xs mt-3">Chúc cụ một ngày an lành!</p>
+              <p className="text-slate-400 text-xs mt-3">
+                {checkInTime
+                  ? 'Chúc cụ một ngày an lành!'
+                  : 'Báo động đã được tắt an toàn. Chúc cụ một ngày an lành!'}
+              </p>
+
+              {/* Nếu Cụ chưa từng bấm điểm danh hôm nay thì vẫn cho Cụ bấm để báo an tâm trọn vẹn */}
+              {!checkInTime && (
+                <div className="mt-4 pt-3 border-t border-emerald-500/20">
+                  <p className="text-[11px] text-slate-400 mb-2">
+                    Cụ chưa bấm điểm danh buổi sáng, Cụ có muốn chạm nút để con cháu an tâm không?
+                  </p>
+                  <button
+                    type="button"
+                    data-testid="checkin-button"
+                    onClick={onCheckIn}
+                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-bold text-sm rounded-2xl shadow-md transition-all"
+                  >
+                    BẤM ĐIỂM DANH AN TOÀN
+                  </button>
+                </div>
+              )}
             </div>
           ) : systemState === 'Ping_Requested' ? (
             <div className="w-full flex flex-col items-center gap-4">

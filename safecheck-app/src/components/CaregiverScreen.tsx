@@ -895,6 +895,17 @@ export default function CaregiverScreen({
           isLoading={isLoadingContacts}
         />
 
+        {/* Modal Nhật ký & Giám sát Gia đình */}
+        {linkedElderly && (
+          <FamilyActivityModal
+            isOpen={isActivityModalOpen}
+            onClose={() => setIsActivityModalOpen(false)}
+            elderlyId={linkedElderly.id}
+            elderlyName={linkedElderly.full_name}
+            pairingCode={linkedElderly.pairing_code}
+          />
+        )}
+
         {/* Modal Cài đặt Khung giờ Điểm danh */}
         {linkedElderly && (
           <ScheduleSettingsModal
