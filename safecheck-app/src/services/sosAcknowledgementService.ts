@@ -55,6 +55,27 @@ export const sosAcknowledgementService = {
     sosEventId: string
   ): Promise<{ data: SOSAcknowledgement[]; error?: string }> {
     try {
+      // Ưu tiên 1: Gọi RPC get_sos_acknowledgements để lấy tên và mối quan hệ chính xác của từng con cháu
+      const { data: rpcAcks, error: rpcError } = await supabase.rpc('get_sos_acknowledgements', {
+        p_sos_event_id: sosEventId,
+      });
+
+      if (!rpcError && Array.isArray(rpcAcks) && rpcAcks.length > 0) {
+        return {
+          data: rpcAcks.map((a: any) => ({
+            id: a.id,
+            sos_event_id: a.sos_event_id,
+            caregiver_id: a.caregiver_id,
+            caregiver_name: a.caregiver_name || 'Người thân',
+            relationship: a.relationship || 'Người thân',
+            acknowledged_at: a.acknowledged_at,
+            channel: a.channel,
+            created_at: a.created_at,
+          })),
+        };
+      }
+
+      // Ưu tiên 2 (Fallback): Query trực tiếp từ bảng
       const { data: acks, error: acksError } = await supabase
         .from('sos_acknowledgements')
         .select('id, sos_event_id, caregiver_id, acknowledged_at, channel, client_metadata, created_at')
@@ -86,11 +107,18 @@ export const sosAcknowledgementService = {
       const profileMap = new Map((profiles || []).map((p) => [p.id, p.full_name]));
       const linkMap = new Map((links || []).map((l) => [l.caregiver_id, l.relationship]));
 
-      const enrichedAcks: SOSAcknowledgement[] = acks.map((a) => ({
-        ...a,
-        caregiver_name: profileMap.get(a.caregiver_id) || 'Người thân',
-        relationship: linkMap.get(a.caregiver_id) || 'Người thân',
-      }));
+      const enrichedAcks: SOSAcknowledgement[] = acks.map((a) => {
+        const metaName = a.client_metadata?.caregiver_name;
+        const metaRel = a.client_metadata?.relationship;
+        const profName = profileMap.get(a.caregiver_id);
+        const linkRel = linkMap.get(a.caregiver_id);
+
+        return {
+          ...a,
+          caregiver_name: metaName || profName || 'Người thân',
+          relationship: metaRel || linkRel || 'Người thân',
+        };
+      });
 
       return { data: enrichedAcks };
     } catch (err: any) {

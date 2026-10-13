@@ -64,6 +64,25 @@ export const familyAuditService = {
    */
   async getFamilyMembers(elderlyId: string): Promise<FamilyMemberInfo[]> {
     try {
+      // Ưu tiên 1: Gọi RPC get_family_members (SECURITY DEFINER) lấy đầy đủ toàn bộ con cháu trong nhà
+      const { data: rpcMembers, error: rpcErr } = await supabase.rpc('get_family_members', {
+        p_elderly_id: elderlyId,
+      });
+
+      if (!rpcErr && Array.isArray(rpcMembers) && rpcMembers.length > 0) {
+        return rpcMembers.map((m: any) => ({
+          id: m.id,
+          caregiver_id: m.caregiver_id,
+          full_name: m.full_name || 'Người thân',
+          relationship: m.relationship || 'Con cháu',
+          phone: m.phone || null,
+          status: m.status || 'accepted',
+          linked_at: m.created_at,
+          has_push_active: Boolean(m.has_push_active),
+        }));
+      }
+
+      // Ưu tiên 2 (Fallback): Query qua bảng family_links
       const { data: links, error: linkErr } = await supabase
         .from('family_links')
         .select('id, caregiver_id, relationship, status, created_at')
@@ -228,7 +247,7 @@ export const familyAuditService = {
       // 2. Lấy thông tin tiếp nhận
       const { data: acks } = await supabase
         .from('sos_acknowledgements')
-        .select('sos_event_id, caregiver_id, acknowledged_at')
+        .select('sos_event_id, caregiver_id, client_metadata, acknowledged_at')
         .in('sos_event_id', eventIds)
         .order('acknowledged_at', { ascending: true });
 
@@ -276,9 +295,9 @@ export const familyAuditService = {
           }),
           status: ev.status,
           is_active: ev.status === 'active',
-          acknowledged_by: evAcks.map((a) => ({
-            caregiver_name: profileMap.get(a.caregiver_id) || 'Người thân',
-            relationship: linkMap.get(a.caregiver_id) || 'Con cháu',
+          acknowledged_by: evAcks.map((a: any) => ({
+            caregiver_name: a.client_metadata?.caregiver_name || profileMap.get(a.caregiver_id) || 'Người thân',
+            relationship: a.client_metadata?.relationship || linkMap.get(a.caregiver_id) || 'Con cháu',
             acknowledged_at: new Date(a.acknowledged_at).toLocaleTimeString([], {
               hour: '2-digit',
               minute: '2-digit',

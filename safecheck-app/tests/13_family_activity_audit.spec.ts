@@ -95,4 +95,49 @@ test.describe('Module 13: Family Activity Audit & Coordination', () => {
       await expect(modal).not.toBeVisible();
     }
   });
+
+  // ------------------------------------------------------------------
+  // TEST 4: Tích hợp Database - Xác nhận RPC get_family_members trả về toàn bộ con cháu
+  // ------------------------------------------------------------------
+  test('TC13-04: Caregiver gọi RPC get_family_members thấy đầy đủ toàn bộ con cháu (Nguyễn A và Lê Lê)', async () => {
+    const { createClient } = await import('@supabase/supabase-js');
+    const SUPABASE_URL = process.env.VITE_SUPABASE_URL || 'https://bozuzbmgnzzxyrioxzaa.supabase.co';
+    const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || 'sb_publishable_ZQjFvvLTLywvw4rKJIPU9Q_5iR_78Rr';
+    const client = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    // Đăng nhập Caregiver test01 (Nguyễn A)
+    const { data: auth, error: authErr } = await client.auth.signInWithPassword({
+      email: 'test01@gmail.com',
+      password: 'test01@gmail.com',
+    });
+    expect(authErr).toBeNull();
+
+    // Lấy liên kết tới Cụ
+    const { data: myLink } = await client
+      .from('family_links')
+      .select('elderly_id')
+      .eq('caregiver_id', auth.user!.id)
+      .eq('status', 'accepted')
+      .maybeSingle();
+
+    if (myLink?.elderly_id) {
+      // Gọi RPC get_family_members
+      const { data: members, error: mErr } = await client.rpc('get_family_members', {
+        p_elderly_id: myLink.elderly_id,
+      });
+
+      expect(mErr).toBeNull();
+      expect(Array.isArray(members)).toBe(true);
+      // Cụ có nhiều hơn 1 con cháu đã liên kết (ít nhất là Nguyễn A và Lê Lê)
+      expect(members!.length).toBeGreaterThanOrEqual(2);
+
+      const names = members!.map((m: any) => m.full_name);
+      expect(names).toContain('Nguyễn A');
+      expect(names).toContain('Lê Lê');
+
+      const rels = members!.map((m: any) => m.relationship);
+      expect(rels).toContain('Con cả');
+      expect(rels.some((r: string) => r.includes('Con'))).toBe(true);
+    }
+  });
 });
