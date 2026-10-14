@@ -888,7 +888,7 @@ export default function CaregiverScreen({
           <div className="absolute inset-0 z-50 bg-slate-950/95 p-6 flex flex-col justify-center animate-in fade-in">
             <h3 className="text-xl font-black text-white text-center mb-1">Kết nối với Cụ</h3>
             <p className="text-xs text-slate-400 text-center mb-5">
-              Nhập mã gồm 6 ký tự hiển thị ở góc trên màn hình của Cụ.
+              Nhập mã gồm 5-6 ký tự hiển thị ở góc trên màn hình của Cụ.
             </p>
 
             {connectError && (
@@ -900,7 +900,7 @@ export default function CaregiverScreen({
             <form onSubmit={handleConnectSubmit} className="space-y-4">
               <div>
                 <label className="text-xs font-semibold text-slate-300 block mb-1">
-                  Mã ghép nối (6 ký tự):
+                  Mã ghép nối:
                 </label>
                 <input
                   type="text"
