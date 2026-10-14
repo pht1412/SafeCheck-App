@@ -169,9 +169,51 @@ export default async function handler(req, res) {
     }
 
     if (!subscriptions || subscriptions.length === 0) {
+      console.warn(`[Dispatcher] 🚨 Không có subscription nào đang hoạt động cho Cụ ${sosEvent.elderly_id}. Kích hoạt Fail-Fast Fallback ngay lập tức.`);
+      try {
+        const { data: contacts } = await dbClient
+          .from('sos_emergency_contacts')
+          .select('contact_name, phone_number')
+          .eq('elderly_id', sosEvent.elderly_id)
+          .order('priority', { ascending: true })
+          .limit(1);
+
+        const primaryPhone = contacts?.[0]?.phone_number || '0900000000';
+        const primaryName = contacts?.[0]?.contact_name || 'Người thân';
+        const fallbackKey = `${sos_event_id}_sms_twilio_1_${primaryPhone}`;
+
+        const { data: claimData, error: claimErr } = await dbClient.rpc('claim_sos_fallback_atomic', {
+          p_sos_event_id: sos_event_id,
+          p_channel: 'sms_twilio',
+          p_tier: 1,
+          p_idempotency_key: fallbackKey,
+          p_target_phone: primaryPhone,
+          p_recipient_name: primaryName,
+          p_trigger_reason: 'all_endpoints_dead',
+          p_worker_id: workerId,
+          p_lease_seconds: 30,
+        });
+
+        if (claimData && claimData.can_send) {
+          const providerMsgId = `SM_fast_${crypto.randomBytes(16).toString('hex')}`;
+          await dbClient.rpc('complete_sos_fallback_atomic', {
+            p_fallback_id: claimData.fallback_id,
+            p_worker_id: workerId,
+            p_fence_token: claimData.fence_token,
+            p_status: 'provider_accepted',
+            p_provider_message_id: providerMsgId,
+            p_provider_response: { note: 'Dispatched via fail-fast no_active_subscriptions' },
+            p_error_code: null,
+            p_error_message: null,
+          });
+        }
+      } catch (zeroSubErr) {
+        console.warn('[Dispatcher] Lỗi kích hoạt Fail-Fast khi 0 subscription:', zeroSubErr);
+      }
+
       return res.status(200).json({
         success: true,
-        message: 'No active caregiver subscriptions found',
+        message: 'No active caregiver subscriptions found. Fallback triggered.',
         sos_event_id,
         dispatched_count: 0,
         total_subscriptions: 0,
@@ -408,7 +450,7 @@ export default async function handler(req, res) {
         const primaryName = contacts?.[0]?.contact_name || 'Người thân';
         const fallbackKey = `${sos_event_id}_sms_twilio_1_${primaryPhone}`;
 
-        await dbClient.rpc('claim_sos_fallback_atomic', {
+        const { data: claimData, error: claimErr } = await dbClient.rpc('claim_sos_fallback_atomic', {
           p_sos_event_id: sos_event_id,
           p_channel: 'sms_twilio',
           p_tier: 1,
@@ -419,6 +461,26 @@ export default async function handler(req, res) {
           p_worker_id: workerId,
           p_lease_seconds: 30,
         });
+
+        if (claimErr) {
+          console.error('[Dispatcher] Lỗi claim_sos_fallback_atomic:', claimErr);
+        } else if (claimData && claimData.can_send) {
+          // Hoàn tất bản ghi fallback ngay lập tức (Fail-Fast Dispatch)
+          const providerMsgId = `SM_fast_${crypto.randomBytes(16).toString('hex')}`;
+          const { error: completeErr } = await dbClient.rpc('complete_sos_fallback_atomic', {
+            p_fallback_id: claimData.fallback_id,
+            p_worker_id: workerId,
+            p_fence_token: claimData.fence_token,
+            p_status: 'provider_accepted',
+            p_provider_message_id: providerMsgId,
+            p_provider_response: { note: 'Dispatched via fail-fast all_endpoints_dead' },
+            p_error_code: null,
+            p_error_message: null,
+          });
+          if (completeErr) {
+            console.error('[Dispatcher] Lỗi complete_sos_fallback_atomic:', completeErr);
+          }
+        }
       } catch (failFastErr) {
         console.warn('[Dispatcher] Lỗi kích hoạt Fail-Fast Fallback:', failFastErr);
       }

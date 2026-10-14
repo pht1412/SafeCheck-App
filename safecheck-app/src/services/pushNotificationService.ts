@@ -121,13 +121,32 @@ export const pushNotificationService = {
       const registration = await navigator.serviceWorker.ready;
       let subscription = await registration.pushManager.getSubscription();
 
+      // Tự động kiểm tra: Nếu trình duyệt còn giữ token nhưng server đã đánh dấu is_active = false (do 410 Gone)
+      // thì phải hủy ngay token chết đó để xin Apple APNs cấp token hoàn toàn mới
+      if (subscription && !forceRefresh) {
+        try {
+          const { data: dbSub } = await supabase
+            .from('push_subscriptions')
+            .select('is_active')
+            .eq('endpoint', subscription.endpoint)
+            .maybeSingle();
+
+          if (dbSub && dbSub.is_active === false) {
+            console.warn('[PushNotification] Endpoint hiện tại đã hết hạn (is_active = false). Hủy token cũ và cấp mới từ Gateway...');
+            forceRefresh = true;
+          }
+        } catch (checkErr) {
+          console.warn('[PushNotification] Lỗi kiểm tra trạng thái endpoint trong DB:', checkErr);
+        }
+      }
+
       if (forceRefresh && subscription) {
         try {
           await subscription.unsubscribe();
-          subscription = null;
         } catch (unsubErr) {
           console.warn('[PushNotification] Không thể unsubscribe subscription cũ:', unsubErr);
         }
+        subscription = null;
       }
 
       if (!subscription) {
