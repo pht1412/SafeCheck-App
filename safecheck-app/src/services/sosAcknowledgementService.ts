@@ -186,6 +186,12 @@ export const sosAcknowledgementService = {
         return { success: false, escalated: false, error: error.message };
       }
 
+      // Tự động kích hoạt Serverless Escalation Worker để lập tức claim và ghi nhận Fallback Outbox vào database
+      fetch('/api/check-escalation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }).catch((e) => console.warn('[escalateSOS] Không thể trigger /api/check-escalation:', e));
+
       return {
         success: data?.success ?? true,
         escalated: Boolean(data?.escalated),
