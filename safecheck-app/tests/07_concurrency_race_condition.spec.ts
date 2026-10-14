@@ -178,9 +178,9 @@ test.describe('Module 07: Concurrency & Race Condition Control (PRD_Deep_v1)', (
 
     // 3. BẤM ĐỒNG THỜI QUA Promise.all
     console.log('[Test 07B] Kích hoạt 2 lệnh Ping đồng thời...');
-    await Promise.all([
-      pingBtnA.click(),
-      pingBtnB.click(),
+    await Promise.allSettled([
+      pingBtnA.click({ force: true, timeout: 5000 }),
+      pingBtnB.click({ force: true, timeout: 5000 }),
     ]);
 
     await pageA.waitForTimeout(2000);

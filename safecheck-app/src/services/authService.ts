@@ -1,5 +1,6 @@
 import { supabase } from '../supabaseClient';
 import type { UserProfile, UserRole } from '../types';
+import { loginRateLimiter } from './loginRateLimiter';
 
 /**
  * Chuẩn hóa số điện thoại hoặc email:
@@ -68,12 +69,20 @@ export const authService = {
   },
 
   /**
-   * Đăng nhập (Linh hoạt: Nhập số điện thoại hay email đều được)
+   * Đăng nhập (Linh hoạt: Nhập số điện thoại hay email đều được, tích hợp Rate Limiting & Khóa 15 phút)
    */
   async signIn({ identifier, password }: SignInParams) {
     const email = normalizeIdentifierToEmail(identifier);
     if (!email) {
       throw new Error('Vui lòng nhập số điện thoại hoặc email');
+    }
+
+    // 1. Kiểm tra trạng thái khóa tài khoản
+    const status = loginRateLimiter.checkLoginAllowed(email);
+    if (!status.allowed) {
+      throw new Error(
+        `Tài khoản bị tạm khóa do nhập sai mật khẩu quá 5 lần. Vui lòng thử lại sau ${status.retryAfterMinutes} phút.`
+      );
     }
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -82,11 +91,25 @@ export const authService = {
     });
 
     if (error) {
+      // 2. Ghi nhận lần thử sai
+      const failedStatus = loginRateLimiter.recordFailedAttempt(email);
+
+      if (failedStatus.locked) {
+        throw new Error(
+          `Bạn đã nhập sai mật khẩu 5 lần liên tiếp. Tài khoản bị tạm khóa trong ${failedStatus.retryAfterMinutes} phút.`
+        );
+      }
+
       if (error.message.includes('Invalid login credentials')) {
-        throw new Error('Số điện thoại / email hoặc mật khẩu không chính xác');
+        throw new Error(
+          `Số điện thoại / email hoặc mật khẩu không chính xác (Còn ${failedStatus.remainingAttempts} lần thử)`
+        );
       }
       throw new Error(error.message || 'Đăng nhập thất bại');
     }
+
+    // 3. Đăng nhập thành công -> Xóa lịch sử thử sai
+    loginRateLimiter.resetAttempts(email);
 
     return data;
   },

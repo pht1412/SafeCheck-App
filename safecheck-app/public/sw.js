@@ -79,8 +79,9 @@ self.addEventListener('push', (event) => {
       await self.registration.showNotification(title, options);
 
       const subscriptionId = data.subscription_id;
+      const deliveryToken = data.delivery_token;
       if (sosEventId && subscriptionId) {
-        await sendDeliveryAckToServer(sosEventId, subscriptionId, data.schema_version);
+        await sendDeliveryAckToServer(sosEventId, subscriptionId, data.schema_version, deliveryToken);
       }
     } catch (notifErr) {
       console.warn('[SW-Push] showNotification gặp lỗi từ chối:', notifErr);
@@ -92,7 +93,7 @@ self.addEventListener('push', (event) => {
 });
 
 // Hàm phụ trợ gửi Delivery ACK ngầm ngoài Push Event Handler (Bảo toàn Zero-Network Display)
-async function sendDeliveryAckToServer(sosEventId, subscriptionId, schemaVersion) {
+async function sendDeliveryAckToServer(sosEventId, subscriptionId, schemaVersion, deliveryToken) {
   if (typeof fetch === 'undefined') return;
   try {
     await fetch('/api/push-ack', {
@@ -102,6 +103,7 @@ async function sendDeliveryAckToServer(sosEventId, subscriptionId, schemaVersion
       body: JSON.stringify({
         sos_event_id: sosEventId,
         subscription_id: subscriptionId,
+        delivery_token: deliveryToken || null,
         client_displayed_at: Date.now(),
         schema_version: schemaVersion || 1,
       }),

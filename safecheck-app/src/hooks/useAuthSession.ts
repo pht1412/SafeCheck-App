@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import { supabase } from '../supabaseClient';
 import { authService } from '../services/authService';
+import { safeStorageAdapter } from '../services/safeStorageAdapter';
 import type { UserProfile } from '../types';
 
 const CACHE_KEY = 'safecheck_cached_profile';
@@ -38,7 +39,7 @@ export function useAuthSession(): UseAuthSessionReturn {
 
         if (session?.user) {
           // 1. Đọc cache trước để tránh màn hình trắng khi offline
-          const cached = localStorage.getItem(CACHE_KEY);
+          const cached = safeStorageAdapter.getItem(CACHE_KEY);
           if (cached && isMounted) {
             try {
               setUserProfile(JSON.parse(cached));
@@ -51,7 +52,7 @@ export function useAuthSession(): UseAuthSessionReturn {
           const profile = await authService.fetchProfile(session.user.id);
           if (profile && isMounted) {
             setUserProfile(profile);
-            localStorage.setItem(CACHE_KEY, JSON.stringify(profile));
+            safeStorageAdapter.setItem(CACHE_KEY, JSON.stringify(profile));
           } else if (!cached && isMounted) {
             // 3. Fallback an toàn từ session metadata khi offline + chưa có cache
             const meta = session.user.user_metadata || {};
@@ -65,7 +66,7 @@ export function useAuthSession(): UseAuthSessionReturn {
               pairing_code: meta.pairing_code || null,
             };
             setUserProfile(fallbackProfile);
-            localStorage.setItem(CACHE_KEY, JSON.stringify(fallbackProfile));
+            safeStorageAdapter.setItem(CACHE_KEY, JSON.stringify(fallbackProfile));
           }
         }
       } catch (err) {
@@ -81,14 +82,14 @@ export function useAuthSession(): UseAuthSessionReturn {
     const { data: authListener } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (event === 'SIGNED_OUT') {
-          localStorage.removeItem(CACHE_KEY);
+          safeStorageAdapter.removeItem(CACHE_KEY);
           if (isMounted) setUserProfile(null);
         } else if (session?.user && !userProfile) {
           // Chỉ fetch khi chưa có profile (tránh re-fetch không cần thiết)
           const profile = await authService.fetchProfile(session.user.id);
           if (profile && isMounted) {
             setUserProfile(profile);
-            localStorage.setItem(CACHE_KEY, JSON.stringify(profile));
+            safeStorageAdapter.setItem(CACHE_KEY, JSON.stringify(profile));
           }
         }
       }
@@ -103,7 +104,7 @@ export function useAuthSession(): UseAuthSessionReturn {
 
   const signOut = async () => {
     await authService.signOut();
-    localStorage.removeItem(CACHE_KEY);
+    safeStorageAdapter.removeItem(CACHE_KEY);
     setUserProfile(null);
   };
 

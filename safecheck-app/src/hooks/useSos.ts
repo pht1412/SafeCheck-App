@@ -402,7 +402,6 @@ export function useSos(params: {
         .from('sos_events')
         .select('id')
         .eq('elderly_id', targetElderlyId)
-        .eq('status', 'active')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();

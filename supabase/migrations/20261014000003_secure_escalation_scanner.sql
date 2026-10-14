@@ -25,4 +25,4 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.get_overdue_sos_events(TIMESTAMPTZ) TO authenticated, anon, service_role;
+GRANT EXECUTE ON FUNCTION public.get_overdue_sos_events(TIMESTAMPTZ) TO service_role;

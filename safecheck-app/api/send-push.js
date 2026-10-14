@@ -28,6 +28,12 @@ if (VAPID_PUBLIC_KEY && VAPID_PRIVATE_KEY) {
   webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 }
 
+// Hàm ký HMAC mật mã chống giả mạo Delivery ACK (P0-03 & TC-ACK-SEC)
+function generateDeliveryToken(sosEventId, subscriptionId) {
+  const secret = VAPID_PRIVATE_KEY || process.env.CRON_SECRET || 'safecheck_delivery_ack_hmac_secret';
+  return crypto.createHmac('sha256', secret).update(`${sosEventId}:${subscriptionId}`).digest('hex');
+}
+
 // Bounded Concurrency Helper
 async function runInChunks(items, chunkSize, fn) {
   const results = [];
@@ -278,12 +284,14 @@ export default async function handler(req, res) {
         isRetry = attemptCount > 1;
       }
 
-      // 5.2. Tạo Payload gắn nhãn chẩn đoán và schema_version cho từng subscription
+      // 5.2. Tạo Payload gắn nhãn chẩn đoán, schema_version và chữ ký xác thực delivery_token
+      const deliveryToken = generateDeliveryToken(sos_event_id, sub.subscription_id);
       const subPayload = JSON.stringify({
         title: '🚨 SafeCheck - BÁO ĐỘNG SOS KHẨN CẤP!',
         body: `${elderlyName} vừa kích hoạt cảnh báo cứu hộ! Nhấn để mở ứng dụng ngay.`,
         sos_event_id,
         subscription_id: sub.subscription_id,
+        delivery_token: deliveryToken,
         elderly_name: elderlyName,
         url: `/?sos=${sos_event_id}`,
         timestamp: Date.now(),

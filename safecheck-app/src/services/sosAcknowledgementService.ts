@@ -186,11 +186,20 @@ export const sosAcknowledgementService = {
         return { success: false, escalated: false, error: error.message };
       }
 
-      // Tự động kích hoạt Serverless Escalation Worker để lập tức claim và ghi nhận Fallback Outbox vào database
-      fetch('/api/check-escalation', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-      }).catch((e) => console.warn('[escalateSOS] Không thể trigger /api/check-escalation:', e));
+      // Tự động kích hoạt Serverless Escalation Worker kèm Bearer token của session người dùng
+      supabase.auth.getSession().then(({ data: sessionData }) => {
+        const token = sessionData?.session?.access_token;
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+
+        fetch('/api/check-escalation', {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ sos_event_id: sosEventId }),
+        }).catch((e) => console.warn('[escalateSOS] Không thể trigger /api/check-escalation:', e));
+      }).catch((e) => console.warn('[escalateSOS] Không thể lấy session cho check-escalation:', e));
 
       return {
         success: data?.success ?? true,

@@ -258,6 +258,7 @@ test.describe('Module 05: Nghiệp vụ Báo động SOS & Danh bạ Cứu hộ 
     const activeResolveBtn = page.getByTestId('resolve-alarm-elderly-button');
     if (await activeResolveBtn.isVisible()) {
       await activeResolveBtn.click();
+      await expect(page.getByTestId('elderly-emergency-view')).not.toBeVisible({ timeout: 5000 });
       await page.waitForTimeout(500);
     }
 

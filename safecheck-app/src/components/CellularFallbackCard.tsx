@@ -83,6 +83,7 @@ export const CellularFallbackCard: React.FC<CellularFallbackCardProps> = ({
       {onResolveAlarm && (
         <button
           onClick={onResolveAlarm}
+          data-testid="resolve-alarm-elderly-button"
           className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-300 font-bold text-xs rounded-xl border border-slate-600 transition-all"
         >
           🟢 Tôi đã an toàn / Tắt cảnh báo

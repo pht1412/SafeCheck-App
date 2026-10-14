@@ -11,11 +11,6 @@
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
-const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
-const SUPABASE_ANON_KEY = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
-const CRON_SECRET = process.env.CRON_SECRET || process.env.VITE_CRON_SECRET || '';
-
 export default async function handler(req, res) {
   // CORS Headers
   res.setHeader('Access-Control-Allow-Credentials', 'true');
@@ -27,21 +22,47 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // 1. BẢO MẬT HẠ TẦNG (P0-03): Xác thực CRON_SECRET
-  if (CRON_SECRET) {
-    const authHeader = req.headers.authorization || '';
-    const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    if (token !== CRON_SECRET) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid or missing CRON_SECRET' });
+  const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://bozuzbmgnzzxyrioxzaa.supabase.co';
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+  const anonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || 'sb_publishable_ZQjFvvLTLywvw4rKJIPU9Q_5iR_78Rr';
+  const cronSecret = process.env.CRON_SECRET || process.env.VITE_CRON_SECRET || '';
+
+  // 1. BẢO MẬT HẠ TẦNG (P0-03 & P0-SEC-04): Xác thực Dual-Channel chống DoS
+  const authHeader = req.headers.authorization || req.headers.Authorization || '';
+  const token = authHeader.replace(/^Bearer\s+/i, '').trim();
+
+  let isAuthorized = false;
+  let callerRole = 'anonymous';
+
+  // Kênh 1: Cron Job Định Kỳ với CRON_SECRET (Server-to-Server)
+  if (cronSecret && token && token === cronSecret) {
+    isAuthorized = true;
+    callerRole = 'cron_job';
+  }
+
+  // Kênh 2: Người dùng đã đăng nhập (Cụ hoặc Con cháu) kích hoạt khi đồng hồ SLA đếm về 0
+  if (!isAuthorized && token) {
+    const authClient = createClient(supabaseUrl, anonKey);
+    const { data: userData, error: authErr } = await authClient.auth.getUser(token);
+    if (!authErr && userData?.user) {
+      isAuthorized = true;
+      callerRole = 'authenticated_user';
     }
   }
 
-  // 0. Kiểm tra cấu hình môi trường
-  if (!SUPABASE_URL || (!SUPABASE_SERVICE_ROLE_KEY && !SUPABASE_ANON_KEY)) {
+  // CHẶN ĐỨNG TOÀN BỘ YÊU CẦU NẶC DANH HOẶC TOKEN KHÔNG HỢP LỆ
+  if (!isAuthorized) {
+    return res.status(401).json({
+      error: 'Unauthorized: Missing or invalid credentials (Valid CRON_SECRET or Authenticated Session Token required)',
+    });
+  }
+
+  // 0. Kiểm tra cấu hình môi trường Supabase
+  if (!supabaseUrl || (!serviceRoleKey && !anonKey)) {
     return res.status(500).json({ error: 'Server misconfiguration: Missing Supabase credentials' });
   }
 
-  const dbClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY || SUPABASE_ANON_KEY, {
+  const dbClient = createClient(supabaseUrl, serviceRoleKey || anonKey, {
     auth: { persistSession: false },
   });
 
