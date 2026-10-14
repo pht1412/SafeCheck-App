@@ -72,13 +72,44 @@ self.addEventListener('push', (event) => {
     },
   };
 
-  // 1.6. Hiển thị thông báo và bắt lỗi có kiểm soát
-  event.waitUntil(
-    self.registration.showNotification(title, options).catch((err) => {
-      console.warn('[SW-Push] showNotification gặp lỗi từ chối:', err);
-    })
-  );
+  // 1.6. Chuỗi thực thi tuần tự Two-Way Delivery Handshake chuẩn PRD v3.2:
+  // CHỈ KHI showNotification hiển thị thành công mới gọi hàm phụ trợ gửi Delivery ACK!
+  const processPushEvent = async () => {
+    try {
+      await self.registration.showNotification(title, options);
+
+      const subscriptionId = data.subscription_id;
+      if (sosEventId && subscriptionId) {
+        await sendDeliveryAckToServer(sosEventId, subscriptionId, data.schema_version);
+      }
+    } catch (notifErr) {
+      console.warn('[SW-Push] showNotification gặp lỗi từ chối:', notifErr);
+      // TUYỆT ĐỐI KHÔNG gửi ACK giả nếu notification hiển thị thất bại!
+    }
+  };
+
+  event.waitUntil(processPushEvent());
 });
+
+// Hàm phụ trợ gửi Delivery ACK ngầm ngoài Push Event Handler (Bảo toàn Zero-Network Display)
+async function sendDeliveryAckToServer(sosEventId, subscriptionId, schemaVersion) {
+  if (typeof fetch === 'undefined') return;
+  try {
+    await fetch('/api/push-ack', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,
+      body: JSON.stringify({
+        sos_event_id: sosEventId,
+        subscription_id: subscriptionId,
+        client_displayed_at: Date.now(),
+        schema_version: schemaVersion || 1,
+      }),
+    });
+  } catch (ackErr) {
+    console.warn('[SW-Push] Gửi Delivery ACK ngầm thất bại (mạng chập chờn):', ackErr);
+  }
+}
 
 // 2. LẮNG NGHE THAO TÁC CHẠM VÀO THÔNG BÁO (NOTIFICATION CLICK & SAFE DEEP-LINK)
 self.addEventListener('notificationclick', (event) => {

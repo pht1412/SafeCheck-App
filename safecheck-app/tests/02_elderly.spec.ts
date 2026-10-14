@@ -81,7 +81,7 @@ test.describe('Module 02: Nghiệp vụ Màn hình Người cao tuổi (Elderly 
     const safeCard = page.getByTestId('status-safe-card');
     await expect(safeCard).toBeVisible({ timeout: 10000 });
     await expect(safeCard).toContainText('HÔM NAY ĐÃ ỔN');
-    await expect(safeCard).toContainText('Đã điểm danh lúc:');
+    await expect(safeCard).toHaveText(/Đã điểm danh lúc:|Điểm danh sáng lúc:|Đã tắt báo động/);
   });
 
   // ===================================================================

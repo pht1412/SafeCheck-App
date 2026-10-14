@@ -189,18 +189,26 @@ export default function ElderlyScreen({
                     </div>
                   )}
 
-                  {/* 3. Đếm ngược SLA chờ con cháu tiếp nhận */}
-                  {acknowledgements &&
-                    acknowledgements.length === 0 &&
-                    remainingEscalationSeconds !== null &&
-                    remainingEscalationSeconds > 0 && (
-                      <div
-                        data-testid="sos-escalation-countdown"
-                        className="w-full bg-slate-900/90 border border-slate-700 rounded-xl p-2.5 text-center mb-3 text-slate-300 text-xs"
-                      >
-                        ⏳ Đang chờ người thân tiếp nhận... ({remainingEscalationSeconds}s)
-                      </div>
-                    )}
+                  {/* 3. Bảng Đo đạc Sinh tồn & Đếm ngược kích hoạt SMS dự phòng (PRD v3.2) */}
+                  <div className="w-full bg-slate-900/90 border border-slate-700/80 rounded-2xl p-3 text-left mb-3 text-xs shadow-inner">
+                    <div className="flex items-center gap-1.5 text-emerald-400 font-semibold mb-1">
+                      <span>✅</span>
+                      <span>Trạm máy chủ: Đã tiếp nhận tín hiệu cứu hộ</span>
+                    </div>
+
+                    {acknowledgements &&
+                      acknowledgements.length === 0 &&
+                      remainingEscalationSeconds !== null &&
+                      remainingEscalationSeconds > 0 && (
+                        <div
+                          data-testid="sos-escalation-countdown"
+                          className="text-amber-300 font-medium mt-1.5 flex items-center gap-1"
+                        >
+                          <span>⏳</span>
+                          <span>Đếm ngược đến hạn kích hoạt SMS dự phòng: <strong>{remainingEscalationSeconds}s</strong></span>
+                        </div>
+                      )}
+                  </div>
 
                   {/* Nút gọi khẩn cấp 115 - Luôn sẵn sàng kể cả khi đã có con cháu */}
                   <a

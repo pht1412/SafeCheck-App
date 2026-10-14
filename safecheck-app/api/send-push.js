@@ -243,6 +243,7 @@ export default async function handler(req, res) {
         title: '🚨 SafeCheck - BÁO ĐỘNG SOS KHẨN CẤP!',
         body: `${elderlyName} vừa kích hoạt cảnh báo cứu hộ! Nhấn để mở ứng dụng ngay.`,
         sos_event_id,
+        subscription_id: sub.subscription_id,
         elderly_name: elderlyName,
         url: `/?sos=${sos_event_id}`,
         timestamp: Date.now(),
@@ -386,7 +387,42 @@ export default async function handler(req, res) {
       console.warn('[Dispatcher] Không thể cập nhật push_dispatched_at:', e);
     }
 
+    // 6.2. FAIL-FAST FALLBACK (P0-04 & PRD v3.2):
+    // Nếu 100% endpoints của con cháu đều bị expired (410/404) -> Ghi nhận kích hoạt Fallback ngay lập tức
     const acceptedCount = dispatchResults.filter((r) => r.status === 'accepted').length;
+    const allEndpointsDead = subscriptions.length > 0 && acceptedCount === 0 && dispatchResults.every(
+      (r) => r.status === 'expired' || r.http_status === 410 || r.http_status === 404
+    );
+
+    if (allEndpointsDead) {
+      console.warn(`[Dispatcher] 🚨 Cảnh báo P0: 100% endpoints của con cháu đều chết (410/404) cho SOS ${sos_event_id}. Kích hoạt Fail-Fast Fallback.`);
+      try {
+        const { data: contacts } = await dbClient
+          .from('sos_emergency_contacts')
+          .select('contact_name, phone_number')
+          .eq('elderly_id', sosEvent.elderly_id)
+          .order('priority', { ascending: true })
+          .limit(1);
+
+        const primaryPhone = contacts?.[0]?.phone_number || '0900000000';
+        const primaryName = contacts?.[0]?.contact_name || 'Người thân';
+        const fallbackKey = `${sos_event_id}_sms_twilio_1_${primaryPhone}`;
+
+        await dbClient.rpc('claim_sos_fallback_atomic', {
+          p_sos_event_id: sos_event_id,
+          p_channel: 'sms_twilio',
+          p_tier: 1,
+          p_idempotency_key: fallbackKey,
+          p_target_phone: primaryPhone,
+          p_recipient_name: primaryName,
+          p_trigger_reason: 'all_endpoints_dead',
+          p_worker_id: workerId,
+          p_lease_seconds: 30,
+        });
+      } catch (failFastErr) {
+        console.warn('[Dispatcher] Lỗi kích hoạt Fail-Fast Fallback:', failFastErr);
+      }
+    }
 
     return res.status(200).json({
       success: true,
