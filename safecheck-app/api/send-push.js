@@ -198,12 +198,10 @@ export default async function handler(req, res) {
           const providerMsgId = `SM_fast_${crypto.randomBytes(16).toString('hex')}`;
           await dbClient.rpc('complete_sos_fallback_atomic', {
             p_fallback_id: claimData.fallback_id,
-            p_worker_id: workerId,
             p_fence_token: claimData.fence_token,
             p_status: 'provider_accepted',
             p_provider_message_id: providerMsgId,
             p_provider_response: { note: 'Dispatched via fail-fast no_active_subscriptions' },
-            p_error_code: null,
             p_error_message: null,
           });
         }
@@ -469,12 +467,10 @@ export default async function handler(req, res) {
           const providerMsgId = `SM_fast_${crypto.randomBytes(16).toString('hex')}`;
           const { error: completeErr } = await dbClient.rpc('complete_sos_fallback_atomic', {
             p_fallback_id: claimData.fallback_id,
-            p_worker_id: workerId,
             p_fence_token: claimData.fence_token,
             p_status: 'provider_accepted',
             p_provider_message_id: providerMsgId,
             p_provider_response: { note: 'Dispatched via fail-fast all_endpoints_dead' },
-            p_error_code: null,
             p_error_message: null,
           });
           if (completeErr) {
