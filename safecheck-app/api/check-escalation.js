@@ -49,16 +49,22 @@ export default async function handler(req, res) {
   const now = new Date().toISOString();
 
   try {
-    // 2. QUÉT CÁC SỰ KIỆN SOS ĐÃ ĐẾN HẠN CHÓT SLA (T0 + 60s)
-    const { data: overdueEvents, error: scanErr } = await dbClient
-      .from('sos_events')
-      .select('id, elderly_id, escalation_deadline, created_at, status')
-      .eq('status', 'active')
-      .lte('escalation_deadline', now);
-
-    if (scanErr) {
-      console.error('[Escalation] Lỗi quét sos_events:', scanErr);
-      return res.status(500).json({ error: 'Failed to scan overdue SOS events: ' + scanErr.message });
+    // 2. QUÉT CÁC SỰ KIỆN SOS ĐÃ ĐẾN HẠN CHÓT SLA (T0 + 120s)
+    let overdueEvents = null;
+    const { data: rpcOverdue, error: rpcScanErr } = await dbClient.rpc('get_overdue_sos_events', { p_now: now });
+    if (!rpcScanErr && rpcOverdue) {
+      overdueEvents = rpcOverdue;
+    } else {
+      const { data: fallbackScan, error: scanErr } = await dbClient
+        .from('sos_events')
+        .select('id, elderly_id, escalation_deadline, created_at, status')
+        .eq('status', 'active')
+        .lte('escalation_deadline', now);
+      if (scanErr) {
+        console.error('[Escalation] Lỗi quét sos_events:', scanErr);
+        return res.status(500).json({ error: 'Failed to scan overdue SOS events: ' + scanErr.message });
+      }
+      overdueEvents = fallbackScan;
     }
 
     if (!overdueEvents || overdueEvents.length === 0) {

@@ -189,6 +189,16 @@ export const pushNotificationService = {
         return { success: false, message: 'Lỗi lưu thông tin thiết bị: ' + dbError.message };
       }
 
+      // Khi làm mới kết nối (forceRefresh), vô hiệu hóa các subscription cũ khác của user này
+      // để tránh tồn tại hàng loạt zombie endpoints từ các lần cài đặt hoặc test trước
+      if (forceRefresh) {
+        await supabase
+          .from('push_subscriptions')
+          .update({ is_active: false })
+          .eq('user_id', user.id)
+          .neq('endpoint', subscription.endpoint);
+      }
+
       return { success: true, message: 'Đã bật nhận cảnh báo khẩn cấp thành công!', subscription };
     } catch (err: unknown) {
       const errorMsg = err instanceof Error ? err.message : String(err);
