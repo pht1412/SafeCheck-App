@@ -130,7 +130,7 @@ test.describe('Security Audit - Lỗ hổng 1: Thu hồi quyền truy cập củ
 
   test('SEC-09: Anon KHÔNG THỂ đọc hoặc ghi trực tiếp vào bảng sos_fallbacks', async () => {
     // Thử SELECT
-    const { data: readData, error: readError } = await anonClient
+    const { error: readError } = await anonClient
       .from('sos_fallbacks')
       .select('*')
       .limit(5);
