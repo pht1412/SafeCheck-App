@@ -14,6 +14,7 @@
 5. [BÁO CÁO KẾT QUẢ KIỂM THỬ TỰ ĐỘNG PLAYWRIGHT (CHẠY ĐỘC LẬP TỪNG FILE)](#5-báo-cáo-kết-quả-kiểm-thử-tự-động-playwright-chạy-độc-lập-từng-file)
 6. [KỊCH BẢN THUYẾT TRÌNH & TRÌNH DIỄN V2 (DEMO SCRIPT 2.0)](#6-kịch-bản-thuyết-trình--trình-diễn-v2-demo-script-20)
 7. [MA TRẬN SWOT V2 & LỘ TRÌNH THƯƠNG MẠI HÓA](#7-ma-trận-swot-v2--lộ-trình-thương-mại-hóa)
+8. [PHỤ LỤC CẬP NHẬT THEO MÃ NGUỒN (23/10/2026)](#8-phụ-lục-cập-nhật-theo-mã-nguồn-23102026)
 
 ---
 
@@ -244,3 +245,40 @@ Trước khi chuẩn bị đẩy code lên kho lưu trữ (Git), toàn bộ **9 
 
 ---
 *Bản báo cáo này tổng hợp đầy đủ toàn bộ thành quả kỹ thuật và nghiệp vụ của dự án SafeCheck tính đến ngày 17/09/2026, sẵn sàng cho việc nghiệm thu, bàn giao mã nguồn và thuyết trình demo.*
+
+---
+
+## 8. PHỤ LỤC CẬP NHẬT THEO MÃ NGUỒN (23/10/2026)
+
+> Phụ lục này cập nhật những phần được bổ sung sau mốc của báo cáo gốc. Đây là kiểm kê mã nguồn, cấu hình, migration và test hiện có; không thay thế biên bản chạy test hoặc xác nhận triển khai production.
+
+### 8.1. Các chức năng có trong mã nhưng báo cáo cũ chưa mô tả
+
+| Tính năng bổ sung | Hành vi hiện có | Bằng chứng trong repository |
+|---|---|---|
+| Nhật ký hoạt động gia đình | Caregiver có thể mở modal và xem danh sách thành viên/liên kết, thông tin điểm danh trong ngày và các sự cố SOS gần đây; dữ liệu sự cố có người tiếp nhận và người giải quyết khi có. | `src/components/FamilyActivityModal.tsx`, `src/services/familyAuditService.ts`, RPC `get_family_members`; `tests/13_family_activity_audit.spec.ts` |
+| Xác nhận SOS bởi con người | Caregiver có hành động xác nhận đang tiếp nhận xử lý SOS; danh sách/người tiếp nhận được cập nhật trong ứng dụng và thông tin tiếp nhận được hiển thị ở màn hình Cụ. Đây là xác nhận của người dùng, khác với biên nhận kỹ thuật từ Service Worker. | `src/components/CaregiverScreen.tsx`, `src/components/ElderlyScreen.tsx`, `src/services/sosAcknowledgementService.ts`; migrations tạo RPC `acknowledge_sos_event`; `tests/12_emergency_drill_escalation.spec.ts` |
+| Biên nhận push hai chiều | Sau khi Service Worker hiển thị notification thành công, thiết bị gửi delivery ACK về `/api/push-ack`; backend ghi trạng thái `delivery_acked` vào sổ cái `push_deliveries`. ACK này chỉ xác nhận thiết bị xử lý thông báo, không chứng minh con người đã đọc hay tiếp nhận SOS. | `public/sw.js`, `api/push-ack.js`, migration `20261014000000_push_delivery_ack_schema.sql`; `tests/14_two_way_push_ack.spec.ts`, `tests/17_security_push_ack_spoofing.spec.ts` |
+| Quyết định fallback tự động | Worker quét SOS quá hạn, kiểm tra điều kiện và claim fallback bằng RPC/outbox có idempotency, lease và fencing để tránh nhiều worker cùng xử lý hoặc gửi lặp. Fallback không bị bỏ qua chỉ vì thiết bị đã ACK push; điều kiện dừng liên quan đến human ACK. | `api/check-escalation.js`, `api/send-push.js`, bảng/RPC `sos_fallbacks`; `tests/15_autonomous_fallback.spec.ts`, `tests/19_security_escalation_gateway.spec.ts` |
+| Bảo vệ mã ghép nối và quyền truy cập | Có giới hạn thử mã ghép nối ở tầng dữ liệu; các test kiểm tra giới hạn gọi RPC ẩn danh, thử mã sai liên tiếp và cấp lại mã ghép nối. | migrations `20261014000004_revoke_anon_and_secure_rpc.sql`, `20261014000005_secure_pairing_rate_limit.sql`; `tests/16_security_anon_permissions.spec.ts`, `tests/18_security_pairing_brute_force.spec.ts` |
+| Bảo vệ đăng nhập và phiên | Có giới hạn số lần đăng nhập sai ở client, adapter lưu phiên có fallback khi localStorage gặp lỗi, xử lý lifecycle online/visibility và đăng xuất chủ động cho caregiver. | `src/services/loginRateLimiter.ts`, `src/services/safeStorageAdapter.ts`; `tests/20_security_login_rate_limit.spec.ts`, `tests/21_security_token_storage.spec.ts` |
+
+### 8.2. Giới hạn cần nêu rõ để tránh tuyên bố vượt quá bằng chứng
+
+1. **Fallback viễn thông chưa được xác nhận là gửi SMS thật:** `api/check-escalation.js` hiện tạo mã tin nhắn/provider ID mô phỏng và ghi trạng thái `provider_accepted`; chưa thấy lời gọi tới API nhà cung cấp SMS trong mã được kiểm kê. Vì vậy không nên trình bày SMS đã được gửi tới số điện thoại thật.
+2. **Gọi thoại tự động chưa được triển khai/xác nhận:** Mặc dù PRD Deep v3 mô tả cấp leo thang bằng voice call, không tìm thấy tích hợp nhà cung cấp cuộc gọi trong mã ứng dụng hiện tại. Cần xem đây là phần còn thiếu so với PRD, không phải tính năng đã bàn giao.
+3. **Delivery ACK không phải human ACK:** `delivery_acked` là telemetry của thiết bị; chỉ thao tác tiếp nhận SOS trong app mới thể hiện có người chăm sóc xác nhận. Không dùng hai trạng thái này thay thế cho nhau trong demo hoặc báo cáo.
+4. **Test mô phỏng không chứng minh tích hợp production:** Một số case trong `14_two_way_push_ack.spec.ts` và toàn bộ case quyết định trong `15_autonomous_fallback.spec.ts` mô phỏng chuyển trạng thái/logic trong test. Chúng có ích để kiểm tra quy tắc, nhưng không thay thế kiểm thử với APNs/FCM, nhà cung cấp SMS/cuộc gọi và thiết bị thật.
+5. **Bảo vệ đăng nhập có phạm vi client:** `loginRateLimiter.ts` lưu số lần thử bằng localStorage và bộ nhớ trong tiến trình trình duyệt; không nên mô tả giới hạn này như rate limit tập trung phía server.
+
+### 8.3. Tình trạng kiểm thử và công nghệ theo repository
+
+- Repository hiện có **21 file test Playwright** (`tests/01_...` đến `tests/21_...`) với **110 khai báo `test()`**. Đây là số test được tìm thấy trong mã tại ngày kiểm kê, **không phải kết quả chạy mới** và không được diễn giải là 110/110 đã pass.
+- Báo cáo này giữ nguyên bảng kết quả lịch sử của 9 suite tại thời điểm lập. Báo cáo kỹ thuật [Report_Deepv2.md](./Report_Deepv2.md) lưu kết quả lịch sử 12 suite; các test 13–21 bổ sung những phạm vi ở mục 8.1 và chưa có kết quả chạy xác nhận trong lần kiểm kê này.
+- Metadata trong báo cáo phiên bản 2.0 đã cũ: manifest hiện khai báo React `19.2.8` (không phải React 18 như tiêu đề báo cáo mô tả). Cần cập nhật phiên bản công nghệ khi lập biên bản release mới.
+
+### 8.4. Kết luận cập nhật phạm vi báo cáo
+
+Các báo cáo trước đã bao quát tốt luồng điểm danh, lịch linh hoạt, SOS, kết nối gia đình, push cơ bản, offline và độ tin cậy của thiết bị. Những nội dung còn thiếu ở cấp sản phẩm — nhật ký hoạt động gia đình, human ACK, delivery ACK hai chiều, fallback tự động và các lớp bảo vệ mới — đã được bổ sung tại phụ lục này thay vì tạo báo cáo v3 riêng.
+
+Do đó, **chưa cần tạo `Report_SafeCheck_v3.md`**: phần bổ sung hiện có thể quản lý trong báo cáo v2. Tuy nhiên, chưa thể kết luận toàn bộ yêu cầu PRD Deep v3 đã hoàn tất: gửi SMS thật và gọi thoại tự động vẫn cần triển khai/xác minh riêng; việc chạy test mới và kiểm thử trên thiết bị/nhà cung cấp thật cũng cần được ghi nhận trước khi tuyên bố sẵn sàng production.
