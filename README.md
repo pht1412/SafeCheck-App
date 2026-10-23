@@ -54,15 +54,44 @@
 ## Luồng hoạt động
 
 ```mermaid
-flowchart LR
-    E[Người cao tuổi<br/>PWA] -->|Điểm danh / SOS| DB[(Supabase<br/>Auth · PostgreSQL · RLS)]
-    C[Người chăm sóc<br/>PWA] <-->|Realtime: trạng thái và xác nhận| DB
-    DB <-->|Realtime| E
-    DB --> API[Vercel API<br/>Push dispatcher]
-    API --> GW[Push gateway<br/>APNs / FCM qua trình duyệt]
-    GW --> SW[Service Worker<br/>trên thiết bị người chăm sóc]
-    E -.->|Mất mạng: lưu SOS cục bộ,<br/>đồng bộ lại khi online| Q[(IndexedDB)]
-    Q -.->|Mạng phục hồi| DB
+flowchart TB
+    subgraph ELDERLY["Thiết bị người cao tuổi"]
+        direction LR
+        E["PWA SafeCheck"]
+        Q[("IndexedDB<br/>Hàng đợi SOS ngoại tuyến")]
+        R["Ứng dụng / Service Worker<br/>gửi bù khi có mạng"]
+        E -.->|"Mất mạng: lưu SOS"| Q
+        Q -.->|"Mạng phục hồi"| R
+    end
+
+    subgraph BACKEND["Backend SafeCheck"]
+        direction LR
+        DB[("Supabase<br/>Auth · PostgreSQL · RLS · Realtime")]
+        API["Vercel API<br/>Push dispatcher / ACK"]
+    end
+
+    subgraph CAREGIVER["Thiết bị người chăm sóc"]
+        direction LR
+        GW["Push gateway<br/>APNs / FCM"]
+        SW["Service Worker"]
+        N["Thông báo SOS<br/>trên thiết bị"]
+        C["PWA SafeCheck"]
+        GW -->|"Web Push"| SW
+        SW -->|"Hiển thị"| N
+        N -->|"Chạm thông báo"| C
+    end
+
+    E -->|"Điểm danh / SOS trực tuyến"| DB
+    R -->|"RPC idempotent: đồng bộ SOS"| DB
+    E -->|"Sau khi SOS được ghi nhận: POST /api/send-push"| API
+    R -->|"Sau khi SOS được ghi nhận: POST /api/send-push"| API
+    API <-->|"Tra cứu SOS và đăng ký nhận push"| DB
+    API -->|"Phát thông báo"| GW
+    SW -->|"Delivery ACK sau khi hiển thị"| API
+    API -->|"Ghi nhận biên nhận thiết bị"| DB
+    C -->|"Human ACK: xác nhận tiếp nhận SOS"| DB
+    DB -->|"Realtime: trạng thái / SOS"| C
+    DB -->|"Realtime: trạng thái / SOS"| E
 ```
 
 ## Bắt đầu phát triển
