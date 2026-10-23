@@ -58,6 +58,7 @@
 ```mermaid
 sequenceDiagram
     autonumber
+    actor U as Người cao tuổi
     participant E as PWA người cao tuổi
     participant DB as Supabase
     participant API as Vercel Push Dispatcher
@@ -66,6 +67,7 @@ sequenceDiagram
     participant C as PWA caregiver
     actor H as Người chăm sóc
 
+    U->>E: Nhấn giữ SOS, chờ đếm ngược 10 giây và xác nhận
     E->>DB: Gọi RPC tạo SOS idempotent
     DB-->>E: Server ACK và SOS event ID
     E->>API: POST /api/send-push với SOS event ID
