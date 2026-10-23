@@ -56,9 +56,8 @@
 ```mermaid
 flowchart LR
     E[Người cao tuổi<br/>PWA] -->|Điểm danh / SOS| DB[(Supabase<br/>Auth · PostgreSQL · RLS)]
-    C[Người chăm sóc<br/>PWA] <-->|Trạng thái và xác nhận| DB
+    C[Người chăm sóc<br/>PWA] <-->|Realtime: trạng thái và xác nhận| DB
     DB <-->|Realtime| E
-    DB <-->|Realtime| C
     DB --> API[Vercel API<br/>Push dispatcher]
     API --> GW[Push gateway<br/>APNs / FCM qua trình duyệt]
     GW --> SW[Service Worker<br/>trên thiết bị người chăm sóc]
