@@ -53,46 +53,51 @@
 
 ## Luồng hoạt động
 
+### 1. Luồng SOS trực tuyến và Web Push
+
 ```mermaid
-flowchart TB
-    subgraph ELDERLY["Thiết bị người cao tuổi"]
-        direction LR
-        E["PWA SafeCheck"]
-        Q[("IndexedDB<br/>Hàng đợi SOS ngoại tuyến")]
-        R["Ứng dụng / Service Worker<br/>gửi bù khi có mạng"]
-        E -.->|"Mất mạng: lưu SOS"| Q
-        Q -.->|"Mạng phục hồi"| R
-    end
+flowchart LR
+    E["Thiết bị người cao tuổi<br/>PWA SafeCheck"]
+    DB[("Supabase<br/>ghi nhận sự kiện SOS")]
+    API["Vercel API<br/>Push dispatcher"]
+    GW["Push gateway<br/>APNs / FCM"]
+    SW["Thiết bị người chăm sóc<br/>Service Worker"]
+    N["Hiển thị thông báo SOS"]
 
-    subgraph BACKEND["Backend SafeCheck"]
-        direction LR
-        DB[("Supabase<br/>Auth · PostgreSQL · RLS · Realtime")]
-        API["Vercel API<br/>Push dispatcher / ACK"]
-    end
-
-    subgraph CAREGIVER["Thiết bị người chăm sóc"]
-        direction LR
-        GW["Push gateway<br/>APNs / FCM"]
-        SW["Service Worker"]
-        N["Thông báo SOS<br/>trên thiết bị"]
-        C["PWA SafeCheck"]
-        GW -->|"Web Push"| SW
-        SW -->|"Hiển thị"| N
-        N -->|"Chạm thông báo"| C
-    end
-
-    E -->|"Điểm danh / SOS trực tuyến"| DB
-    R -->|"RPC idempotent: đồng bộ SOS"| DB
-    E -->|"Sau khi SOS được ghi nhận: POST /api/send-push"| API
-    R -->|"Sau khi SOS được ghi nhận: POST /api/send-push"| API
-    API <-->|"Tra cứu SOS và đăng ký nhận push"| DB
-    API -->|"Phát thông báo"| GW
-    SW -->|"Delivery ACK sau khi hiển thị"| API
-    API -->|"Ghi nhận biên nhận thiết bị"| DB
-    C -->|"Human ACK: xác nhận tiếp nhận SOS"| DB
-    DB -->|"Realtime: trạng thái / SOS"| C
-    DB -->|"Realtime: trạng thái / SOS"| E
+    E -->|"Tạo SOS"| DB
+    DB -->|"PWA gọi dispatch sau server ACK"| API
+    API -->|"Tra cứu SOS và push subscription"| DB
+    API -->|"Gửi Web Push"| GW
+    GW -->|"Chuyển push"| SW
+    SW -->|"Hiển thị trên thiết bị"| N
 ```
+
+**Sau khi thông báo được hiển thị:** Service Worker gửi **Delivery ACK** qua `/api/push-ack`, backend ghi biên nhận vào Supabase. Khi caregiver chạm thông báo, PWA mở sự cố; caregiver có thể gửi **Human ACK** xác nhận tiếp nhận về Supabase. Hai ACK này khác nhau: Delivery ACK là biên nhận kỹ thuật của thiết bị, Human ACK là hành động của con người.
+
+**Realtime:** Supabase đồng bộ trạng thái điểm danh/SOS tới PWA của người cao tuổi và caregiver; đây là kênh cập nhật trong ứng dụng, tách biệt với Web Push.
+
+### 2. Luồng SOS khi thiết bị người cao tuổi mất mạng
+
+```mermaid
+flowchart LR
+    E["Thiết bị người cao tuổi<br/>PWA SafeCheck"]
+    Q[("IndexedDB<br/>Hàng đợi SOS cục bộ")]
+    R["Ứng dụng / Service Worker<br/>gửi bù khi có mạng"]
+    DB[("Supabase<br/>RPC tạo SOS idempotent")]
+    API["Vercel API<br/>Push dispatcher"]
+    GW["Push gateway<br/>APNs / FCM"]
+    SW["Service Worker<br/>trên thiết bị caregiver"]
+
+    E -->|"Mất mạng: lưu SOS"| Q
+    Q -->|"Mạng phục hồi / sync khả dụng"| R
+    R -->|"Đồng bộ sự kiện SOS"| DB
+    R -->|"Sau khi có server ACK: gọi dispatch"| API
+    API -->|"Tra cứu dữ liệu và subscriptions"| DB
+    API -->|"Gửi Web Push"| GW
+    GW -->|"Chuyển push"| SW
+```
+
+IndexedDB là hàng đợi cục bộ trên thiết bị người cao tuổi, không phải kênh gửi push. Sau khi mạng phục hồi, ứng dụng hoặc Service Worker đồng bộ SOS lên Supabase; khi có server ACK, luồng dispatch tiếp tục qua Vercel và push gateway như sơ đồ chính.
 
 ## Bắt đầu phát triển
 
