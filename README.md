@@ -56,20 +56,29 @@
 ### 1. Luồng SOS trực tuyến và Web Push
 
 ```mermaid
-flowchart LR
-    E["Thiết bị người cao tuổi<br/>PWA SafeCheck"]
-    DB[("Supabase<br/>ghi nhận sự kiện SOS")]
-    API["Vercel API<br/>Push dispatcher"]
-    GW["Push gateway<br/>APNs / FCM"]
-    SW["Thiết bị người chăm sóc<br/>Service Worker"]
-    N["Hiển thị thông báo SOS"]
+sequenceDiagram
+    autonumber
+    participant E as PWA người cao tuổi
+    participant DB as Supabase
+    participant API as Vercel Push Dispatcher
+    participant GW as Push Gateway
+    participant SW as Service Worker caregiver
+    participant C as PWA caregiver
+    actor H as Người chăm sóc
 
-    E -->|"Tạo SOS"| DB
-    DB -->|"PWA gọi dispatch sau server ACK"| API
-    API -->|"Tra cứu SOS và push subscription"| DB
-    API -->|"Gửi Web Push"| GW
-    GW -->|"Chuyển push"| SW
-    SW -->|"Hiển thị trên thiết bị"| N
+    E->>DB: Gọi RPC tạo SOS idempotent
+    DB-->>E: Server ACK và SOS event ID
+    E->>API: POST /api/send-push với SOS event ID
+    API->>DB: Xác thực SOS, đọc sự kiện và push subscriptions
+    DB-->>API: Sự kiện hợp lệ và subscriptions đang hoạt động
+    API->>GW: Gửi Web Push
+    GW-->>SW: Chuyển thông báo tới thiết bị caregiver
+    SW->>SW: Hiển thị notification
+    SW->>API: POST /api/push-ack sau khi hiển thị
+    API->>DB: Ghi nhận Delivery ACK
+    H->>SW: Chạm notification
+    SW-->>C: Mở PWA theo liên kết tới SOS
+    C->>DB: Gửi Human ACK khi caregiver xác nhận tiếp nhận
 ```
 
 **Sau khi thông báo được hiển thị:** Service Worker gửi **Delivery ACK** qua `/api/push-ack`, backend ghi biên nhận vào Supabase. Khi caregiver chạm thông báo, PWA mở sự cố; caregiver có thể gửi **Human ACK** xác nhận tiếp nhận về Supabase. Hai ACK này khác nhau: Delivery ACK là biên nhận kỹ thuật của thiết bị, Human ACK là hành động của con người.
@@ -98,6 +107,25 @@ flowchart LR
 ```
 
 IndexedDB là hàng đợi cục bộ trên thiết bị người cao tuổi, không phải kênh gửi push. Sau khi mạng phục hồi, ứng dụng hoặc Service Worker đồng bộ SOS lên Supabase; khi có server ACK, luồng dispatch tiếp tục qua Vercel và push gateway như sơ đồ chính.
+
+### 3. Luồng điểm danh hằng ngày: đúng giờ và trễ giờ
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> Early_Waiting: Trước giờ bắt đầu
+    Early_Waiting --> Waiting: Đến giờ bắt đầu theo server time
+    Waiting --> Safe: Cụ điểm danh, RPC được chấp nhận
+    Waiting --> Late: Quá hạn chót theo server time
+    Late --> Safe: Cụ điểm danh trễ, RPC được chấp nhận
+    Late --> Emergency: Quá hạn chót cộng buffer
+    Safe --> [*]: Kết thúc chu kỳ ngày
+```
+
+- Lịch riêng của Cụ xác định giờ bắt đầu, hạn chót và khoảng đệm; nếu chưa cấu hình, hệ thống dùng mặc định **07:00, 09:00 và 30 phút**.
+- Khi `pg_cron` được bật và lịch được cài đặt, `check_overdue_routine_v2` chạy mỗi phút để tạo log trong ngày và chuyển trạng thái theo giờ máy chủ: `Early_Waiting → Waiting → Late → Emergency`.
+- Trong `Waiting`, nút điểm danh được mở; ở `Late`, Cụ vẫn có thể điểm danh và chuyển sang `Safe`. RPC kiểm tra thời gian máy chủ, từ chối điểm danh quá sớm và không cho tự chuyển khỏi `Emergency`.
+- Dashboard caregiver nhận trạng thái qua Supabase Realtime. **Trong mã hiện tại chưa tìm thấy bộ gửi Web Push riêng cho trạng thái `Late`**; PRD có mô tả cảnh báo push mức 1, vì vậy không nên xem phần đó là đã triển khai chỉ dựa trên trạng thái Late/Realtime.
 
 ## Bắt đầu phát triển
 
